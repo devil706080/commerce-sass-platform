@@ -1,0 +1,76 @@
+name: commerce-saas-platform
+
+services:
+  postgres:
+    image: postgres:18.7
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: platform_control
+      POSTGRES_USER: local_bootstrap_admin
+      POSTGRES_PASSWORD: ${POSTGRES_BOOTSTRAP_PASSWORD:?Run scripts/bootstrap_local.py first}
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      PLATFORM_CONTROL_RUNTIME_PASSWORD: ${PLATFORM_CONTROL_RUNTIME_PASSWORD:?Run scripts/bootstrap_local.py first}
+      PLATFORM_CONTROL_MIGRATOR_PASSWORD: ${PLATFORM_CONTROL_MIGRATOR_PASSWORD:?Run scripts/bootstrap_local.py first}
+      PLATFORM_CONTROL_WORKER_PASSWORD: ${PLATFORM_CONTROL_WORKER_PASSWORD:?Run scripts/bootstrap_local.py first}
+      TENANT_DATABASE_PROVISIONER_PASSWORD: ${TENANT_DATABASE_PROVISIONER_PASSWORD:?Run scripts/bootstrap_local.py first}
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    stop_grace_period: 60s
+
+  redis:
+    image: redis:8.10.3
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Run scripts/bootstrap_local.py first}
+    command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+      - ./secrets/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$${REDIS_PASSWORD}\" redis-cli ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  mailpit:
+    image: ghcr.io/axllent/mailpit:v1.33.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${MAILPIT_SMTP_PORT:-1025}:1025"
+      - "127.0.0.1:${MAILPIT_UI_PORT:-8025}:8025"
+
+  rabbitmq:
+    image: rabbitmq:4.4.0-management
+    profiles: ["messaging"]
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-local_dev}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:?Run scripts/bootstrap_local.py first}
+    ports:
+      - "127.0.0.1:${RABBITMQ_AMQP_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:

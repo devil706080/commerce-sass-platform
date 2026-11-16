@@ -1,0 +1,1 @@
+Operational runbooks are added as each service/infrastructure dependency is implemented. Include startup/shutdown, health checks, migrations, failure recovery, backup/restore and tenant-specific actions.

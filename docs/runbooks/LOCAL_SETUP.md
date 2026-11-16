@@ -1,0 +1,50 @@
+# Local Setup Runbook
+
+# Part H — Local Setup Runbook
+
+# Local setup runbook
+
+The canonical setup steps, role boundaries and destructive commands are in `docs/architecture/PHASE_1_LOCAL_FOUNDATION.md`.
+
+## Quick start (PowerShell)
+
+If this folder came from a ZIP and is not yet a Git repository, run `git init` once first. Do not run it again inside an existing repository.
+
+```powershell
+python .\scripts\bootstrap_local.py
+git check-ignore .env infra/local/secrets/redis.conf
+docker compose -f .\infra\local\compose.yaml config --quiet
+docker compose -f .\infra\local\compose.yaml up -d postgres redis mailpit
+docker compose -f .\infra\local\compose.yaml ps
+```
+
+Open Mailpit at `http://127.0.0.1:8025`. PostgreSQL is `127.0.0.1:5432` and Redis is `127.0.0.1:6379`.
+
+## Troubleshooting checklist
+
+1. `docker version` fails: start Docker Desktop and wait until the Linux engine is running.
+2. `docker compose config` fails with a missing variable: run `python scripts/bootstrap_local.py` and confirm `.env` exists in repository root.
+3. Port is already allocated: change the corresponding host port in ignored `.env`, then recreate that service.
+4. PostgreSQL init role script did not rerun: init scripts execute only on an empty data volume; use a reviewed migration or deliberately reset disposable data with `docker compose ... down -v`.
+5. Mailpit is empty: configure the application SMTP host as `mailpit`, port `1025` from a container; from host use `127.0.0.1:1025`.
+6. Never fix a credential error by using `local_bootstrap_admin` in an application. Identify the intended runtime/migrator/worker/provisioner identity instead.
+
+## Verification record
+
+Record date, Docker/Compose versions, command output, role checks and any port changes here. Do not record passwords or tokens.
+
+| Check | Result | Date / notes |
+|---|---|---|
+| Docker Engine | Running; Compose reports services healthy | 2026-11-16 |
+| Compose config | Passed using `--env-file .env` | 2026-11-16 |
+| PostgreSQL healthy | PostgreSQL 18.7; socket connection to `platform_control` succeeded | 2026-11-16 |
+| PostgreSQL roles | All four intended roles exist and authenticate over TCP; database and public schema owned by migrator | 2026-11-16 |
+| PostgreSQL privileges | Runtime, migrator and worker can connect; runtime has schema USAGE but not CREATE; PUBLIC has neither database CONNECT nor TEMPORARY | 2026-11-16 |
+| Redis healthy | Authenticated PING returned PONG | 2026-11-16 |
+| Mailpit UI | HTTP 200 on localhost:8025; manual browser verification pending | 2026-11-16 |
+| Port bindings | PostgreSQL 5432, Redis 6379, Mailpit 1025 and 8025 bound to 127.0.0.1 | 2026-11-16 |
+| Git ignores secrets | `.env` and `infra/local/secrets/redis.conf` ignored | 2026-11-16 |
+
+PowerShell sessions with Docker's user installation may need a fresh PATH. Because the Compose file is in `infra/local`, use `docker compose --env-file .env -f .\infra\local\compose.yaml` from the repository root. Manual Mailpit UI inspection, the documented volume-preservation criterion, and the complete Phase 1A exit gate remain unverified.
+
+---

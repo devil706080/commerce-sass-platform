@@ -1,0 +1,37 @@
+# Local secrets and environment files
+.env
+.env.*
+!.env.example
+infra/local/secrets/*
+!infra/local/secrets/README.md
+
+# Python
+.venv/
+**/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# JavaScript / frontend
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+dist/
+build/
+pnpm-debug.log*
+
+# Local runtime artifacts
+*.log
+.tmp/
+.local/
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/

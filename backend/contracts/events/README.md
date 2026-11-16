@@ -1,0 +1,1 @@
+Place versioned domain event schemas here. Include event ID, schema version, occurred-at, tenant ID, aggregate ID and correlation/causation IDs. Never place secrets, PAN/CVV or unnecessary PII in events.
