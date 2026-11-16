@@ -1,6 +1,21 @@
 name: commerce-saas-platform
 
 services:
+  platform-control:
+    profiles: ["platform-control"]
+    build:
+      context: ../../backend/services/platform-control-plane
+    environment:
+      DB_HOST: postgres
+      PLATFORM_CONTROL_RUNTIME_PASSWORD: ${PLATFORM_CONTROL_RUNTIME_PASSWORD:?Run scripts/bootstrap_local.py first}
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+
   postgres:
     image: postgres:18.7
     restart: unless-stopped
