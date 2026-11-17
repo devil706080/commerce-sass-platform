@@ -2,9 +2,9 @@
 
 ## Required topology
 
-Tenant commerce data uses **database-per-tenant-per-service**. Example: Tenant A has its own Catalogue DB, Inventory DB, Orders DB and Payment DB. Tenant B has different databases for those same service boundaries. The platform control-plane database is separate and stores only SaaS metadata such as tenant registry, verified domain mappings, lifecycle state, plans, entitlements and database provisioning references.
+Tenant commerce data uses **database-per-tenant with schema-per-service**. Example: Tenant A has one opaque tenant database containing `catalogue`, `inventory`, `orders` and `payment` schemas. Tenant B has a different database. The platform control-plane database is separate and stores only SaaS metadata such as tenant registry, verified domain mappings, lifecycle state, plans, entitlements and database provisioning references.
 
-A single local PostgreSQL Docker container may host multiple logical databases for development convenience. This does not make the databases shared: each tenant/service database is separately named using opaque identifiers, has separate credentials, independent migrations and a least-privilege role. Future hosting topology is a later ADR.
+A single local PostgreSQL Docker container may host multiple logical tenant databases for development convenience. Each tenant database is separately named using opaque identifiers, has separate credentials, independent service schemas/migrations and least-privilege roles. Future extraction of a high-scale service into its own database is a later ADR.
 
 ## Request-to-database flow
 

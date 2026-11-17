@@ -68,3 +68,35 @@ Follow-up: migration `003_audit_actor` was applied with owner authorization via 
 - Real Keycloak-protected onboarding created Lifemac Pharma in `PENDING` and verified `lifemac.localhost` with method `LOCAL`.
 - Running preview resolved `lifemac.localhost` to the correct opaque tenant ID with `VERIFIED` domain status; `unknown.localhost` returned 404.
 - No public DNS, hosting provider, tenant service database or activation was performed.
+
+## Provisioning orchestration boundary (2026-11-17)
+
+- Migration `006_provisioning_jobs` was applied through the dedicated `platform_control_migrator` service; Alembic reports it as head.
+- Ruff check/format and strict MyPy passed. Full unit, security and PostgreSQL integration suite: 24 passed, with the existing Starlette/httpx deprecation warning.
+- The API supports idempotent fixture provisioning requests, job listing, failed-job retry and service-database metadata listing. Unknown services are rejected by both request validation and database constraints.
+- The isolated worker uses `platform_control_worker` for job metadata and `tenant_database_provisioner` only for PostgreSQL infrastructure. Neither credential exists in `RuntimeSettings` or the API container configuration.
+- Lifemac Catalogue and Inventory fixture jobs reached `INFRASTRUCTURE_READY`. Both runtime roles authenticated to their own opaque databases; Catalogue-to-Inventory connection was denied.
+- Both databases are owned by their service migrator roles. Runtime/migrator roles are LOGIN roles with no superuser, CREATEDB or CREATEROLE capability and connection limit 20. PUBLIC has neither CONNECT nor TEMPORARY.
+- Generated passwords were not printed or stored in control-plane metadata. Only local secret-volume references were persisted.
+- The first Catalogue attempt failed because PostgreSQL rejected a bind placeholder in `CREATE ROLE ... PASSWORD`; no roles/database were created. The safe SQL-literal composition fix was applied and the durable retry completed on attempt 2.
+- Tenant remains `PROVISIONING`; no service migration was executed and the tenant was not marked ACTIVE. Two-tenant isolation and the Phase 1B human exit gate remain outstanding.
+
+## Tenant database/schema architecture revision (2026-11-17)
+
+- Updated the repository rule and ADR-015: new provisioning uses one opaque database per tenant and one schema per enabled service.
+- Migration `007_tenant_database_schemas` was applied by `platform_control_migrator`; `tenant_databases` exists and service metadata now supports `tenant_database_id` and `schema_name`.
+- Updated worker identity derivation, schema creation and schema USAGE permissions. Static checks passed: Ruff and strict MyPy.
+- Existing Catalogue/Inventory per-service databases and old metadata are intentionally preserved. No destructive cleanup or data migration has been performed.
+- The new worker path still requires a focused runtime smoke test before retiring the legacy fixture databases.
+- Focused runtime smoke test subsequently passed: Lifemac Catalogue and Inventory both reached `INFRASTRUCTURE_READY` in the same tenant database (`t_49e84243...`) with distinct `catfx` and `invfx` schemas. Migration `008_shared_db` removed the obsolete global `database_name` uniqueness constraint. The worker role-set failure was fixed by granting temporary role SET/ADMIN options during provisioning; those grants are revoked by the worker after setup.
+- Migrations `009_service_ready` and `010_active_status` were applied. Lifemac remains `PROVISIONING`; service readiness rows are `PENDING` until owning-service migrations and smoke checks run. The activation endpoint rejects incomplete tenants instead of allowing premature `ACTIVE` state.
+
+## 2026-11-17 control-plane continuation
+
+- The dedicated owning-service migration runner was rebuilt and executed through the `service-migration` Compose profile using each service's migrator credential. Both Lifemac readiness rows are now `MIGRATED`/`PASSED`.
+- Verified tenant database tables: `catfx.products` and `invfx.stock_items` in `t_49e84243f9e44981b3a538f943cc79ba`.
+- Migrator roles have `USAGE, CREATE` only on their service schemas; runtime roles retain schema `USAGE` and table DML grants. The control-plane worker does not execute owning-service DDL.
+- `docker compose --env-file .env -f .\\infra\\local\\compose.yaml config --quiet` passed. PostgreSQL, Redis, Mailpit, Keycloak, API, worker, and console containers were running; API `/health` returned `ok`; all published ports remained loopback-bound.
+- Backend scoped Ruff (excluding repository executable-bit/shebang noise) and strict MyPy passed in the built image.
+- Lifemac is intentionally still `PROVISIONING` until the authenticated activation endpoint is exercised; no premature activation was performed. A second-tenant isolation proof and the final human exit-gate walkthrough remain outstanding.
+- Follow-up verification: Lifemac is now `ACTIVE`, with a `TENANT_ACTIVATED` audit event. The authenticated activation flow completed successfully after both service readiness rows were `MIGRATED`/`PASSED`.

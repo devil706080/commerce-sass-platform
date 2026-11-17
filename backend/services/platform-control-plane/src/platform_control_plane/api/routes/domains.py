@@ -25,13 +25,17 @@ def _require_local_adapter(request: Request) -> None:
         raise HTTPException(status_code=404, detail="Local domain adapter is disabled")
 
 
-def _require_onboardable_tenant(session: Session, tenant_id: UUID) -> None:
+def _tenant_status(session: Session, tenant_id: UUID) -> str:
     status_value = session.execute(
         text("SELECT status FROM tenants WHERE id = :id"), {"id": tenant_id}
     ).scalar_one_or_none()
     if status_value is None:
         raise HTTPException(status_code=404, detail="Tenant not found")
-    if status_value != "PENDING":
+    return str(status_value)
+
+
+def _require_onboardable_tenant(session: Session, tenant_id: UUID) -> None:
+    if _tenant_status(session, tenant_id) != "PENDING":
         raise HTTPException(status_code=409, detail="Tenant cannot accept domain changes")
 
 
@@ -97,7 +101,7 @@ def list_domains(
     session: SessionDep,
 ) -> Any:
     _require_local_adapter(request)
-    _require_onboardable_tenant(session, tenant_id)
+    _tenant_status(session, tenant_id)
     return (
         session.execute(
             text(

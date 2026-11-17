@@ -9,7 +9,14 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
-from platform_control_plane.api.routes import domains, health, local_preview, readiness, tenants
+from platform_control_plane.api.routes import (
+    domains,
+    health,
+    local_preview,
+    provisioning,
+    readiness,
+    tenants,
+)
 from platform_control_plane.core.config import RuntimeSettings
 from platform_control_plane.core.logging import log_event
 from platform_control_plane.database.engine import create_runtime_engine
@@ -43,6 +50,7 @@ def create_app() -> FastAPI:
     app.include_router(local_preview.router)
     app.include_router(tenants.router)
     app.include_router(domains.router)
+    app.include_router(provisioning.router)
 
     @app.middleware("http")
     async def correlation(request: Request, call_next: RequestResponseEndpoint) -> Response:

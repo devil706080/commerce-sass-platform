@@ -144,6 +144,29 @@ def test_local_domain_registration_and_verification(monkeypatch):
             assert preview.status_code == 200
             assert preview.json()["tenant_id"] == first_tenant["id"]
             assert preview.json()["domain_status"] == "VERIFIED"
+            requested = client.post(
+                f"/api/v1/tenants/{first_tenant['id']}/provisioning-jobs",
+                json={"service_key": "catalogue_fixture"},
+            )
+            assert requested.status_code == 201
+            assert requested.json()["status"] == "PENDING"
+            duplicate_job = client.post(
+                f"/api/v1/tenants/{first_tenant['id']}/provisioning-jobs",
+                json={"service_key": "catalogue_fixture"},
+            )
+            assert duplicate_job.status_code == 200
+            assert duplicate_job.json()["id"] == requested.json()["id"]
+            jobs = client.get(f"/api/v1/tenants/{first_tenant['id']}/provisioning-jobs").json()
+            assert jobs == [duplicate_job.json()]
+            retry = client.post(
+                f"/api/v1/tenants/{first_tenant['id']}/provisioning-jobs/"
+                f"{requested.json()['id']}/retry"
+            )
+            assert retry.status_code == 409
+            assert (
+                client.get(f"/api/v1/tenants/{first_tenant['id']}/service-databases").json() == []
+            )
+            assert client.get("/_local/tenant", headers={"Host": host}).status_code == 404
             listed = client.get(f"/api/v1/tenants/{first_tenant['id']}/domains").json()
             assert {item["hostname"] for item in listed} == {host, unconfigured_host}
         session.close()

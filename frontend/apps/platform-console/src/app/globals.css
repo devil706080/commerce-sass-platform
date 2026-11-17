@@ -127,6 +127,9 @@ tbody tr:hover { background: #fbfcfb; }
 .tenant-cell small { margin-top: 4px; color: var(--subtle); font-size: 9px; }
 .status-pill { display: inline-flex; min-width: 112px; align-items: center; gap: 7px; padding: 6px 9px; border-radius: 999px; font-size: 9px; font-weight: 780; white-space: nowrap; }
 .status-pill.pending { color: #8b5b13; background: var(--amber-bg); }
+.status-pill.provisioning { color: #236b5a; background: #dff3ec; }
+.status-pill.active { color: #1f6a43; background: #d9f2df; }
+.status-pill.failed { color: #994239; background: var(--coral-bg); }
 .status-pill.deleting { color: #994239; background: var(--coral-bg); }
 .status-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .date-value { color: var(--muted); white-space: nowrap; }
@@ -137,6 +140,18 @@ tbody tr:hover { background: #fbfcfb; }
 .danger-action { display: inline-flex; align-items: center; gap: 6px; padding: 7px 9px; border: 0; border-radius: 7px; color: var(--coral); background: transparent; font-size: 10px; font-weight: 700; white-space: nowrap; }
 .danger-action:hover:not(:disabled) { background: var(--coral-bg); }
 .danger-action:disabled { color: var(--subtle); }
+.secondary-button.compact { display: inline-flex; align-items: center; gap: 5px; margin-right: 5px; padding: 7px 9px; font-size: 10px; }
+.service-option { display: flex !important; align-items: center; gap: 11px; margin: 10px 0 !important; padding: 12px; border: 1px solid var(--line); border-radius: 9px; background: #fbfcfb; }
+.service-option input { width: 16px; height: 16px; }
+.service-option span { display: grid; gap: 3px; }
+.service-option small { color: var(--subtle); font-size: 10px; font-weight: 500; }
+.tenant-selector { display: flex !important; align-items: center; gap: 10px; margin: 0 !important; }
+.tenant-selector select { min-width: 220px; height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; }
+.provisioning-summary { display: flex; justify-content: space-between; padding: 18px; border-bottom: 1px solid var(--line); }
+.provisioning-summary span, .job-card small, .job-state { color: var(--muted); font-size: 11px; }
+.job-list { display: grid; gap: 10px; padding: 18px; }
+.job-card { display: grid; grid-template-columns: 1fr auto 150px auto; gap: 16px; align-items: center; padding: 15px; border: 1px solid var(--line); border-radius: 10px; }
+.job-card > div { display: grid; gap: 4px; }
 .skeleton-row span { display: block; width: 80%; height: 12px; border-radius: 4px; background: linear-gradient(90deg, #f0f2f1 25%, #fafbfa 50%, #f0f2f1 75%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 .empty-state { display: grid; min-height: 300px; place-items: center; align-content: center; padding: 50px 20px; text-align: center; }

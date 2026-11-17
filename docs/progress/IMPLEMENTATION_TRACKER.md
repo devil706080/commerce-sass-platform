@@ -1,6 +1,6 @@
 # Implementation tracker
 
-Platform Control Plane, Phase 1B: **foundation, tenant registry, local Keycloak/operator console, and deterministic local domain verification implemented; human review pending**. Images build and local containers are healthy. Schema changes were applied with the migrator role. Full lifecycle transitions and provisioning remain incomplete. See TEST_RESULTS.md.
+Platform Control Plane, Phase 1B: **implemented and locally verified**. The Lifemac tenant has passed Catalogue and Inventory migration/smoke readiness and was activated through the authenticated console flow. The local control-plane exit gate is complete; production hardening and additional tenants remain outside this phase.
 
 ## Increment B: first registry slice in progress
 

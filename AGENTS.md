@@ -16,10 +16,10 @@ Before any task, read: `README.md`, `docs/product/PRD.md`, the relevant section 
 
 ## Non-negotiable architecture rules
 1. Multi-tenant SaaS, not a one-tenant Lifemac application.
-2. Tenant commerce data uses database-per-tenant-per-service. Provision only enabled tenant/service database pairs.
+2. Tenant commerce data uses one opaque database per tenant with one schema per enabled service. Provision only enabled tenant/service schemas.
 3. The singleton platform-control database stores platform metadata only: tenant registry, verified domains, lifecycle, plans/entitlements and database/secret references. It is not a commerce database.
 4. The Control Plane provisions databases, roles and secret references through a separate privileged worker. Each service runs its own migrations using its own migrator identity. The Control Plane must not apply another service's migrations.
-5. Revoke PostgreSQL `CONNECT` and `TEMPORARY` from `PUBLIC` on every tenant/service database. Grant database access only to that service's runtime/migrator roles. Runtime roles are not owners, superusers, `CREATEDB` or `CREATEROLE`.
+5. Revoke PostgreSQL `CONNECT` and `TEMPORARY` from `PUBLIC` on every tenant database. Grant database access only to that tenant's service runtime/migrator roles. Runtime roles are not owners, superusers, `CREATEDB` or `CREATEROLE`; schema privileges are service-scoped.
 6. Use opaque generated tenant IDs in resource names; never use a business display name or unsanitized slug as a SQL identifier.
 7. Tenant routing comes from trusted ingress and verified domain mapping. Never trust a browser-supplied tenant ID/header/query/body as authorization or database-routing authority. Validate signed internal tenant context (issuer, audience, expiry, key ID/signature) and tenant lifecycle state.
 8. Resolve tenant membership/role separately from tenant identification. Authorize every object operation. Platform operator identity is separate from tenant staff and customer identity.

@@ -153,3 +153,46 @@ def request_tenant_deletion(
     )
     session.commit()
     return tenant
+
+
+@router.post("/{tenant_id}/activate", response_model=TenantResponse)
+def activate_tenant(
+    tenant_id: UUID,
+    session: SessionDep,
+    operator: Annotated[Operator, Depends(require_operator)],
+) -> Any:
+    ready: bool = session.execute(
+        text(
+            "SELECT count(*) > 0 AND bool_and(migration_status = 'MIGRATED' "
+            "AND smoke_status = 'PASSED') FROM tenant_service_readiness WHERE tenant_id = :id"
+        ),
+        {"id": tenant_id},
+    ).scalar_one()
+    if not ready:
+        raise HTTPException(status_code=409, detail="Tenant services are not fully ready")
+    tenant = (
+        session.execute(
+            text(
+                "UPDATE tenants SET status='ACTIVE', updated_at=now() WHERE id=:id AND status='PROVISIONING' RETURNING "
+                + _FIELDS
+            ),
+            {"id": tenant_id},
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if tenant is None:
+        raise HTTPException(status_code=409, detail="Tenant is not ready for activation")
+    session.execute(
+        text(
+            "INSERT INTO tenant_audit_events (id, tenant_id, action, actor_issuer, actor_subject) VALUES (:audit,:tenant,'TENANT_ACTIVATED',:issuer,:subject)"
+        ),
+        {
+            "audit": uuid4(),
+            "tenant": tenant_id,
+            "issuer": operator.issuer,
+            "subject": operator.subject,
+        },
+    )
+    session.commit()
+    return tenant

@@ -41,6 +41,61 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  platform-provisioner:
+    profiles: ["provisioning"]
+    build:
+      context: ../../backend/services/platform-control-plane
+    command: ["python", "-m", "platform_control_plane.worker.main"]
+    environment:
+      DB_HOST: postgres
+      PLATFORM_CONTROL_WORKER_PASSWORD: ${PLATFORM_CONTROL_WORKER_PASSWORD:?Run scripts/bootstrap_local.py first}
+      TENANT_DATABASE_PROVISIONER_PASSWORD: ${TENANT_DATABASE_PROVISIONER_PASSWORD:?Run scripts/bootstrap_local.py first}
+      LOCAL_PROVISIONED_SECRETS_DIR: /var/lib/platform-secrets
+    volumes:
+      - provisioned_secrets:/var/lib/platform-secrets
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+    security_opt:
+      - no-new-privileges:true
+
+  platform-control-migrate:
+    profiles: ["migration"]
+    build:
+      context: ../../backend/services/platform-control-plane
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DB_HOST: postgres
+      PLATFORM_CONTROL_MIGRATOR_PASSWORD: ${PLATFORM_CONTROL_MIGRATOR_PASSWORD:?Run scripts/bootstrap_local.py first}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
+  platform-service-migrate:
+    profiles: ["service-migration"]
+    build:
+      context: ../../backend/services/platform-control-plane
+    command: ["python", "-m", "platform_control_plane.worker.service_migrations"]
+    environment:
+      DB_HOST: postgres
+      PLATFORM_CONTROL_WORKER_PASSWORD: ${PLATFORM_CONTROL_WORKER_PASSWORD:?Run scripts/bootstrap_local.py first}
+      TENANT_DATABASE_PROVISIONER_PASSWORD: ${TENANT_DATABASE_PROVISIONER_PASSWORD:?Run scripts/bootstrap_local.py first}
+      LOCAL_PROVISIONED_SECRETS_DIR: /var/lib/platform-secrets
+    volumes:
+      - provisioned_secrets:/var/lib/platform-secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
   platform-console:
     profiles: ["platform-console"]
     build:
@@ -138,3 +193,4 @@ volumes:
   postgres_data:
   redis_data:
   rabbitmq_data:
+  provisioned_secrets:

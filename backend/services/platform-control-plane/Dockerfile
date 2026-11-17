@@ -4,7 +4,10 @@ WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN uv sync --locked --no-dev --no-cache && useradd --system --uid 10001 appuser
+RUN uv sync --locked --no-dev --no-cache \
+    && useradd --system --uid 10001 appuser \
+    && mkdir -p /var/lib/platform-secrets \
+    && chown appuser /var/lib/platform-secrets
 COPY alembic.ini ./
 COPY migrations ./migrations
 USER 10001

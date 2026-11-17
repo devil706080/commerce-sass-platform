@@ -86,3 +86,27 @@ class MigrationSettings(DatabaseSettings):
         if not self.platform_control_migrator_password.get_secret_value():
             raise ValueError("migrator password must not be empty")
         return self.make_url("platform_control_migrator", self.platform_control_migrator_password)
+
+
+class WorkerSettings(DatabaseSettings):
+    platform_control_worker_password: SecretStr
+    tenant_database_provisioner_password: SecretStr
+    local_provisioned_secrets_dir: str = "/var/lib/platform-secrets"
+    worker_poll_seconds: int = Field(default=2, ge=1, le=60)
+
+    def worker_database_url(self) -> URL:
+        if not self.platform_control_worker_password.get_secret_value():
+            raise ValueError("worker password must not be empty")
+        return self.make_url("platform_control_worker", self.platform_control_worker_password)
+
+    def provisioner_database_url(self) -> URL:
+        if not self.tenant_database_provisioner_password.get_secret_value():
+            raise ValueError("provisioner password must not be empty")
+        return URL.create(
+            "postgresql+psycopg",
+            username="tenant_database_provisioner",
+            password=self.tenant_database_provisioner_password.get_secret_value(),
+            host=self.db_host,
+            port=self.db_port,
+            database="postgres",
+        )

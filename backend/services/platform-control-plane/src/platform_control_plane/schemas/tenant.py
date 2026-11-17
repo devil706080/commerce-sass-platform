@@ -21,6 +21,6 @@ class TenantCreate(BaseModel):
 class TenantResponse(BaseModel):
     id: UUID
     display_name: str
-    status: Literal["PENDING", "DELETION_REQUESTED"]
+    status: Literal["PENDING", "PROVISIONING", "FAILED", "ACTIVE", "DELETION_REQUESTED"]
     created_at: datetime
     updated_at: datetime

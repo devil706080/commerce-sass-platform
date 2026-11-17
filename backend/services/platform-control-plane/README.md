@@ -50,7 +50,7 @@ Singleton `platform_control` database only. Never store tenant products, custome
 - HTTP API: tenant registry/domain/lifecycle operations, least-privilege `platform_control_runtime` DB role.
 - Migration runner: this service's Alembic migrations, `platform_control_migrator` role.
 - Provisioning worker: reads/writes only authorized provisioning-job rows using `platform_control_worker`; database/role creation uses a separate privileged credential supplied only to that isolated worker. No public route can call arbitrary SQL/provisioning commands.
-- The worker creates tenant/service databases, roles and secret references. It MUST NOT run Catalogue/Inventory/Orders or any other owning-service migrations. Each owning service runs its own migration job using its own migrator.
+- The worker creates one tenant database, service schemas, roles and secret references. It MUST NOT run Catalogue/Inventory/Orders or any other owning-service migrations. Each owning service runs its own schema migration job using its own migrator.
 
 ## First implementation increments
 1. Health/readiness and validated configuration.

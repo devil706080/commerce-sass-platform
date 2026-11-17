@@ -3,7 +3,7 @@
 import Keycloak from "keycloak-js";
 import { FormEvent, ReactNode, useEffect, useMemo, useRef, useState } from "react";
 
-type TenantStatus = "PENDING" | "DELETION_REQUESTED";
+type TenantStatus = "PENDING" | "PROVISIONING" | "ACTIVE" | "FAILED" | "DELETION_REQUESTED";
 type Tenant = {
   id: string;
   display_name: string;
@@ -12,6 +12,8 @@ type Tenant = {
   updated_at: string;
 };
 type Notice = { tone: "success" | "error" | "info"; message: string } | null;
+type ProvisioningJob = { id: string; tenant_id: string; service_key: string; status: "PENDING" | "RUNNING" | "INFRASTRUCTURE_READY" | "FAILED"; attempt_count: number; error_code: string | null; };
+type ServiceDatabase = { service_key: string; database_name: string; schema_name: string | null; status: string; };
 
 const keycloak = new Keycloak({
   url: process.env.NEXT_PUBLIC_KEYCLOAK_URL!,
@@ -39,8 +41,16 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
 }
 
 function StatusPill({ status }: { status: TenantStatus }) {
-  return <span className={`status-pill ${status === "PENDING" ? "pending" : "deleting"}`}>
-    <span className="status-dot" />{status === "PENDING" ? "Pending setup" : "Deletion requested"}
+  const presentation: Record<TenantStatus, { className: string; label: string }> = {
+    PENDING: { className: "pending", label: "Pending setup" },
+    PROVISIONING: { className: "provisioning", label: "Provisioning" },
+    ACTIVE: { className: "active", label: "Active" },
+    FAILED: { className: "failed", label: "Setup failed" },
+    DELETION_REQUESTED: { className: "deleting", label: "Deletion requested" },
+  };
+  const current = presentation[status];
+  return <span className={`status-pill ${current.className}`}>
+    <span className="status-dot" />{current.label}
   </span>;
 }
 
@@ -57,8 +67,15 @@ export default function ConsoleApp() {
   const [filter, setFilter] = useState<"ALL" | TenantStatus>("ALL");
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null);
+  const [provisionTarget, setProvisionTarget] = useState<Tenant | null>(null);
+  const [provisionServices, setProvisionServices] = useState<string[]>(["catalogue_fixture", "inventory_fixture"]);
+  const [provisioning, setProvisioning] = useState(false);
   const [confirmName, setConfirmName] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
+  const [view, setView] = useState<"tenants" | "provisioning">("tenants");
+  const [jobs, setJobs] = useState<ProvisioningJob[]>([]);
+  const [serviceDatabases, setServiceDatabases] = useState<ServiceDatabase[]>([]);
+  const [selectedProvisionTenant, setSelectedProvisionTenant] = useState<string | null>(null);
 
   const operatorName = String(keycloak.tokenParsed?.preferred_username ?? keycloak.tokenParsed?.email ?? "Platform operator");
 
@@ -81,6 +98,46 @@ export default function ConsoleApp() {
       setNotice({ tone: "error", message: "Unable to load the tenant registry" });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadProvisioning(tenantId?: string) {
+    const target = tenantId ?? selectedProvisionTenant ?? tenants[0]?.id;
+    if (!target) return;
+    setSelectedProvisionTenant(target);
+    try {
+      const [jobsResponse, databasesResponse] = await Promise.all([
+        request(`/api/v1/tenants/${target}/provisioning-jobs`),
+        request(`/api/v1/tenants/${target}/service-databases`),
+      ]);
+      if (!jobsResponse.ok || !databasesResponse.ok) throw new Error("Unable to load provisioning state");
+      setJobs(await jobsResponse.json());
+      setServiceDatabases(await databasesResponse.json());
+    } catch (error) {
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Unable to load provisioning state" });
+    }
+  }
+
+  async function retryJob(job: ProvisioningJob) {
+    try {
+      const response = await request(`/api/v1/tenants/${job.tenant_id}/provisioning-jobs/${job.id}/retry`, { method: "POST" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail ?? "Unable to retry provisioning");
+      setNotice({ tone: "success", message: "Provisioning retry queued" });
+      await loadProvisioning(job.tenant_id);
+    } catch (error) { setNotice({ tone: "error", message: error instanceof Error ? error.message : "Unable to retry provisioning" }); }
+  }
+
+  async function activateTenant() {
+    if (!selectedProvisionTenant) return;
+    try {
+      const response = await request(`/api/v1/tenants/${selectedProvisionTenant}/activate`, { method: "POST" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail ?? "Tenant is not ready for activation");
+      setNotice({ tone: "success", message: "Tenant activated" });
+      await loadTenants();
+    } catch (error) {
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Tenant is not ready for activation" });
     }
   }
 
@@ -156,6 +213,25 @@ export default function ConsoleApp() {
     setDeleteTarget(tenant);
   }
 
+  async function startProvisioning() {
+    if (!provisionTarget || provisionServices.length === 0) return;
+    setProvisioning(true);
+    try {
+      for (const service_key of provisionServices) {
+        const response = await request(`/api/v1/tenants/${provisionTarget.id}/provisioning-jobs`, {
+          method: "POST", body: JSON.stringify({ service_key }),
+        });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.detail ?? "Unable to start provisioning");
+      }
+      setProvisionTarget(null);
+      setNotice({ tone: "success", message: `Provisioning started for ${provisionTarget.display_name}` });
+      await loadTenants();
+    } catch (error) {
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Unable to start provisioning" });
+    } finally { setProvisioning(false); }
+  }
+
   if (!authReady) return <main className="auth-page"><div className="auth-loader"><span /><p>Securing your workspace...</p></div></main>;
 
   if (!authenticated) return <main className="auth-page">
@@ -188,8 +264,8 @@ export default function ConsoleApp() {
       <div className="brand-lockup"><span className="brand-mark">C</span><span>Commerce Cloud</span></div>
       <nav aria-label="Platform navigation">
         <p className="nav-label">Workspace</p>
-        <button className="nav-item active"><Icon name="tenants"/><span>Tenants</span></button>
-        <button className="nav-item" disabled><Icon name="grid"/><span>Provisioning</span><em>Soon</em></button>
+        <button className={`nav-item ${view === "tenants" ? "active" : ""}`} onClick={() => setView("tenants")}><Icon name="tenants"/><span>Tenants</span></button>
+        <button className={`nav-item ${view === "provisioning" ? "active" : ""}`} onClick={() => { setView("provisioning"); void loadProvisioning(); }}><Icon name="grid"/><span>Provisioning</span></button>
         <button className="nav-item" disabled><Icon name="domain"/><span>Domains</span><em>Soon</em></button>
       </nav>
       <div className="sidebar-user">
@@ -200,24 +276,33 @@ export default function ConsoleApp() {
     </aside>
 
     <main className="content">
-      <header className="page-header">
+      {view === "tenants" ? <header className="page-header">
         <div><p className="overline">Control plane</p><h1>Tenant registry</h1><p>Manage businesses and track their onboarding lifecycle.</p></div>
         <button className="primary-button" onClick={() => setCreateOpen(true)}><Icon name="plus"/>New tenant</button>
-      </header>
+      </header> : <header className="page-header"><div><p className="overline">Control plane</p><h1>Provisioning</h1><p>Track tenant database, schema, migration and smoke-check readiness.</p></div><button className="secondary-button" onClick={() => void loadProvisioning(selectedProvisionTenant ?? undefined)}><Icon name="refresh"/>Refresh</button></header>}
 
       {notice && <div className={`notice ${notice.tone}`} role="status"><span>{notice.message}</span><button aria-label="Dismiss notification" onClick={() => setNotice(null)}><Icon name="close" size={16}/></button></div>}
 
-      <section className="metrics" aria-label="Tenant overview">
+      {view === "tenants" && <section className="metrics" aria-label="Tenant overview">
         <article><span className="metric-icon blue"><Icon name="tenants"/></span><div><p>Total tenants</p><strong>{counts.total}</strong><small>Registered businesses</small></div></article>
         <article><span className="metric-icon amber"><span className="pulse-dot"/></span><div><p>Pending setup</p><strong>{counts.pending}</strong><small>Awaiting provisioning</small></div></article>
         <article><span className="metric-icon coral"><Icon name="trash"/></span><div><p>Deletion requests</p><strong>{counts.deletion}</strong><small>Awaiting offboarding review</small></div></article>
-      </section>
+      </section>}
 
-      <section className="registry-card">
+      {view === "provisioning" && <section className="registry-card provisioning-dashboard">
+        <div className="registry-toolbar"><label className="tenant-selector">Tenant<select value={selectedProvisionTenant ?? ""} onChange={(event) => void loadProvisioning(event.target.value)}><option value="" disabled>Select tenant</option>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.display_name}</option>)}</select></label></div>
+        <div className="provisioning-summary"><strong>{tenants.find((tenant) => tenant.id === selectedProvisionTenant)?.display_name ?? "Select a tenant"}</strong><span>{serviceDatabases.length} schema records</span>{selectedProvisionTenant && tenants.find((tenant) => tenant.id === selectedProvisionTenant)?.status === "PROVISIONING" && <button className="primary-button compact" onClick={() => void activateTenant()}>Activate when ready</button>}</div>
+        <div className="job-list">{jobs.map((job) => <article className="job-card" key={job.id}><div><strong>{job.service_key === "catalogue_fixture" ? "Catalogue" : "Inventory"}</strong><small>Attempt {job.attempt_count}</small></div><StatusPill status={job.status === "INFRASTRUCTURE_READY" ? "PROVISIONING" : job.status === "FAILED" ? "FAILED" : "PROVISIONING"}/><span className="job-state">{job.status === "INFRASTRUCTURE_READY" ? serviceDatabases.find((item) => item.service_key === job.service_key)?.schema_name ?? "Schema ready" : job.error_code ?? job.status}</span>{job.status === "FAILED" && <button className="secondary-button compact" onClick={() => void retryJob(job)}>Retry</button>}</article>)}{jobs.length === 0 && <div className="empty-state"><h3>No provisioning jobs</h3><p>Select a tenant and start provisioning from the Tenants view.</p></div>}</div>
+      </section>}
+
+      {view === "tenants" && <section className="registry-card">
         <div className="registry-toolbar">
           <div className="search-box"><Icon name="search"/><input aria-label="Search tenants" placeholder="Search by name or tenant ID" value={search} onChange={(event) => setSearch(event.target.value)}/></div>
           <div className="filter-group" aria-label="Filter tenants">
-            {(["ALL", "PENDING", "DELETION_REQUESTED"] as const).map((value) => <button key={value} className={filter === value ? "selected" : ""} onClick={() => setFilter(value)}>{value === "ALL" ? "All" : value === "PENDING" ? "Pending" : "Deletion"}</button>)}
+            {(["ALL", "PENDING", "PROVISIONING", "FAILED", "DELETION_REQUESTED"] as const).map((value) => {
+              const labels = { ALL: "All", PENDING: "Pending", PROVISIONING: "Provisioning", FAILED: "Failed", DELETION_REQUESTED: "Deletion" };
+              return <button key={value} className={filter === value ? "selected" : ""} onClick={() => setFilter(value)}>{labels[value]}</button>;
+            })}
           </div>
           <button className="icon-button" aria-label="Refresh tenant registry" title="Refresh" onClick={() => loadTenants(true)} disabled={loading}><Icon name="refresh"/></button>
         </div>
@@ -231,14 +316,14 @@ export default function ConsoleApp() {
                 <td data-label="Status"><StatusPill status={tenant.status}/></td>
                 <td data-label="Created"><span className="date-value">{new Intl.DateTimeFormat("en", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(tenant.created_at))}</span></td>
                 <td data-label="Tenant ID"><button className="copy-id" title="Copy tenant ID" onClick={() => { void navigator.clipboard.writeText(tenant.id); setNotice({ tone: "info", message: "Tenant ID copied" }); }}><code>{tenant.id.slice(0, 8)}...{tenant.id.slice(-4)}</code><Icon name="copy" size={14}/></button></td>
-                <td className="actions"><button className="danger-action" disabled={tenant.status !== "PENDING"} title={tenant.status === "PENDING" ? "Request tenant deletion" : "Deletion already requested"} onClick={() => openDelete(tenant)}><Icon name="trash" size={16}/><span>Request deletion</span></button></td>
+                <td className="actions"><button className="secondary-button compact" disabled={tenant.status !== "PENDING"} title="Start tenant provisioning" onClick={() => setProvisionTarget(tenant)}><Icon name="grid" size={15}/><span>Provision</span></button><button className="danger-action" disabled={tenant.status !== "PENDING"} title={tenant.status === "PENDING" ? "Request tenant deletion" : tenant.status === "DELETION_REQUESTED" ? "Deletion already requested" : "Unavailable during tenant setup"} onClick={() => openDelete(tenant)}><Icon name="trash" size={16}/><span>Request deletion</span></button></td>
               </tr>)}
             </tbody>
           </table>
           {!loading && visibleTenants.length === 0 && <div className="empty-state"><span><Icon name="search" size={24}/></span><h3>No tenants found</h3><p>{tenants.length ? "Try another search or status filter." : "Create your first tenant to begin onboarding."}</p>{!tenants.length && <button className="text-button" onClick={() => setCreateOpen(true)}>Create a tenant <Icon name="arrow" size={16}/></button>}</div>}
         </div>
         <footer className="table-footer"><span>Showing {visibleTenants.length} of {tenants.length} tenants</span><span>Registry updates are audited</span></footer>
-      </section>
+      </section>}
     </main>
 
     {createOpen && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setCreateOpen(false); }}>
@@ -256,6 +341,16 @@ export default function ConsoleApp() {
         <div className="warning-box"><strong>{deleteTarget.display_name}</strong><span>{deleteTarget.id}</span></div>
         <label htmlFor="confirm-name">Type <strong>{deleteTarget.display_name}</strong> to confirm</label><input id="confirm-name" autoFocus value={confirmName} onChange={(event) => setConfirmName(event.target.value)} autoComplete="off"/>
         <div className="modal-actions"><button className="secondary-button" onClick={() => setDeleteTarget(null)}>Cancel</button><button className="danger-button" disabled={deleting || confirmName.trim() !== deleteTarget.display_name} onClick={requestDeletion}>{deleting ? "Requesting..." : "Request deletion"}</button></div>
+      </section>
+    </div>}
+
+    {provisionTarget && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setProvisionTarget(null); }}>
+      <section className="modal" role="dialog" aria-modal="true" aria-labelledby="provision-title">
+        <button className="modal-close" aria-label="Close" onClick={() => setProvisionTarget(null)}><Icon name="close"/></button>
+        <span className="modal-icon create"><Icon name="grid" size={24}/></span><p className="overline">Tenant provisioning</p><h2 id="provision-title">Prepare {provisionTarget.display_name}</h2>
+        <p>Choose the services to prepare. Each service receives its own schema inside one tenant database.</p>
+        {(["catalogue_fixture", "inventory_fixture"] as const).map((service) => <label className="service-option" key={service}><input type="checkbox" checked={provisionServices.includes(service)} onChange={() => setProvisionServices((current) => current.includes(service) ? current.filter((item) => item !== service) : [...current, service])}/><span><strong>{service === "catalogue_fixture" ? "Catalogue" : "Inventory"}</strong><small>{service === "catalogue_fixture" ? "Products and categories" : "Stock and availability"}</small></span></label>)}
+        <div className="modal-actions"><button className="secondary-button" onClick={() => setProvisionTarget(null)}>Cancel</button><button className="primary-button" disabled={provisioning || provisionServices.length === 0} onClick={startProvisioning}>{provisioning ? "Starting..." : "Start provisioning"}</button></div>
       </section>
     </div>}
   </div>;
