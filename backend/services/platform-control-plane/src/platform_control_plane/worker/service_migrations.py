@@ -17,7 +17,7 @@ def run_service_migrations(settings: WorkerSettings) -> None:
         rows = control.execute(
             "SELECT r.tenant_id,r.service_key,d.database_name,d.schema_name,d.secret_reference "
             "FROM tenant_service_readiness r JOIN tenant_service_databases d USING (tenant_id,service_key) "
-            "WHERE r.migration_status IN ('PENDING', 'FAILED') AND d.status='INFRASTRUCTURE_READY'"
+            "WHERE d.status='INFRASTRUCTURE_READY'"
         ).fetchall()
         for tenant_id, service_key, database_name, schema_name, reference in rows:
             payload = json.loads(
@@ -47,6 +47,15 @@ def run_service_migrations(settings: WorkerSettings) -> None:
                                 "CREATE TABLE IF NOT EXISTS {}.products (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), sku text NOT NULL UNIQUE, name text NOT NULL, price_cents integer NOT NULL CHECK (price_cents >= 0))"
                             ).format(sql.Identifier(schema_name))
                         )
+                        service.execute(sql.SQL("ALTER TABLE {}.products ADD COLUMN IF NOT EXISTS description text").format(sql.Identifier(schema_name)))
+                        service.execute(sql.SQL("ALTER TABLE {}.products ADD COLUMN IF NOT EXISTS published boolean NOT NULL DEFAULT false").format(sql.Identifier(schema_name)))
+                        service.execute(sql.SQL("CREATE TABLE IF NOT EXISTS {}.categories (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL, slug text NOT NULL UNIQUE, description text)").format(sql.Identifier(schema_name)))
+                        service.execute(sql.SQL("CREATE TABLE IF NOT EXISTS {}.product_categories (product_id uuid NOT NULL REFERENCES {}.products(id) ON DELETE CASCADE, category_id uuid NOT NULL REFERENCES {}.categories(id) ON DELETE CASCADE, PRIMARY KEY(product_id, category_id))").format(sql.Identifier(schema_name), sql.Identifier(schema_name), sql.Identifier(schema_name)))
+                        service.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON {}.categories, {}.product_categories TO {}").format(sql.Identifier(schema_name), sql.Identifier(schema_name), sql.Identifier(runtime_role)))
+                        service.execute(sql.SQL("CREATE TABLE IF NOT EXISTS {}.product_images (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), product_id uuid NOT NULL REFERENCES {}.products(id) ON DELETE CASCADE, url text NOT NULL, alt_text text, sort_order integer NOT NULL DEFAULT 0)").format(sql.Identifier(schema_name), sql.Identifier(schema_name)))
+                        service.execute(sql.SQL("CREATE TABLE IF NOT EXISTS {}.product_variants (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), product_id uuid NOT NULL REFERENCES {}.products(id) ON DELETE CASCADE, sku text NOT NULL UNIQUE, name text NOT NULL, price_cents integer NOT NULL CHECK (price_cents >= 0), attributes jsonb NOT NULL DEFAULT '{{}}'::jsonb)").format(sql.Identifier(schema_name), sql.Identifier(schema_name)))
+                        service.execute(sql.SQL("CREATE TABLE IF NOT EXISTS {}.product_prices (id uuid PRIMARY KEY DEFAULT gen_random_uuid(), product_id uuid NOT NULL REFERENCES {}.products(id) ON DELETE CASCADE, name text NOT NULL, price_cents integer NOT NULL CHECK (price_cents >= 0), currency char(3) NOT NULL DEFAULT 'INR', active boolean NOT NULL DEFAULT true)").format(sql.Identifier(schema_name), sql.Identifier(schema_name)))
+                        service.execute(sql.SQL("GRANT SELECT, INSERT, UPDATE, DELETE ON {}.product_images, {}.product_variants, {}.product_prices TO {}").format(sql.Identifier(schema_name), sql.Identifier(schema_name), sql.Identifier(schema_name), sql.Identifier(runtime_role)))
                         service.execute(
                             sql.SQL("GRANT SELECT, INSERT, UPDATE ON {}.products TO {}").format(
                                 sql.Identifier(schema_name), sql.Identifier(runtime_role)

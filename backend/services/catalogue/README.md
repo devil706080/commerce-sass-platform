@@ -1,6 +1,6 @@
 # Catalogue
 
-**Status:** Directory placeholder only. Runtime code is intentionally not scaffolded yet.
+**Status:** Catalogue backend increment implemented: tenant-admin JWT authorization, product CRUD/detail/search, category CRUD, and tenant-isolated `catfx` products/categories storage. Runtime DDL is owned by the service migration job; API startup does not mutate schema.
 
 ## Bounded context and data ownership
 

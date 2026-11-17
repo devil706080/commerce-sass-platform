@@ -4,7 +4,7 @@
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,
   "duplicateEmailsAllowed": false,
-  "roles": { "realm": [{ "name": "platform-operator" }] },
+  "roles": { "realm": [{ "name": "platform-operator" }, { "name": "tenant-admin" }, { "name": "tenant-staff" }, { "name": "customer" }] },
   "clients": [{
     "clientId": "platform-console",
     "enabled": true,
@@ -19,6 +19,22 @@
       "protocol": "openid-connect",
       "protocolMapper": "oidc-audience-mapper",
       "config": { "included.custom.audience": "control-api", "access.token.claim": "true", "id.token.claim": "false" }
+    }]
+  }, {
+    "clientId": "tenant-admin",
+    "enabled": true,
+    "publicClient": true,
+    "standardFlowEnabled": true,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": ["http://localhost:3001/*"],
+    "webOrigins": ["http://localhost:3001"],
+    "attributes": { "pkce.code.challenge.method": "S256" },
+    "protocolMappers": [{
+      "name": "catalogue-api-audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+      "config": { "included.custom.audience": "catalogue-api", "access.token.claim": "true", "id.token.claim": "false" }
+    }, {
+      "name": "tenant-id", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper",
+      "config": { "claim.value": "49e84243-f9e4-4981-b3a5-38f943cc79ba", "claim.name": "tenant_id", "claim.jsonType": "String", "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true" }
     }]
   }],
   "users": [{

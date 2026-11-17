@@ -1,0 +1,15 @@
+[project]
+name = "catalogue-service"
+version = "0.1.0"
+requires-python = ">=3.14,<3.15"
+dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.34,<1", "pydantic-settings>=2.8,<3", "psycopg[binary]>=3.2,<4", "PyJWT[crypto]>=2.10,<3"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/catalogue"]
+
+[dependency-groups]
+dev = ["pytest>=8,<10", "httpx>=0.28,<1"]

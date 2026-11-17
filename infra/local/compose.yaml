@@ -119,6 +119,57 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  catalogue:
+    profiles: ["catalogue"]
+    build:
+      context: ../../backend/services/catalogue
+      dockerfile: Dockerfile
+    environment:
+      CATALOGUE_DATABASE_URL: ${CATALOGUE_DATABASE_URL:-}
+      CATALOGUE_SECRET_FILE: /var/lib/platform-secrets/22550cbd-5e10-4678-9b0c-49fd372468fb.json
+      CATALOGUE_DATABASE_NAME: t_49e84243f9e44981b3a538f943cc79ba
+      CATALOGUE_RUNTIME_ROLE: t_49e84243f9e44981b3a538f943cc79ba_catfx_rt
+      CATALOGUE_DB_HOST: postgres
+      CATALOGUE_DB_PORT: 5432
+      CATALOGUE_OIDC_ISSUER: http://localhost:8080/realms/platform-local
+      CATALOGUE_OIDC_AUDIENCE: catalogue-api
+      CATALOGUE_OIDC_JWKS_URL: http://keycloak:8080/realms/platform-local/protocol/openid-connect/certs
+      CATALOGUE_SCHEMA: ${CATALOGUE_SCHEMA:-catfx}
+      TENANT_HOSTS: ${TENANT_HOSTS:-{}}
+    ports:
+      - "127.0.0.1:8010:8010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - provisioned_secrets:/var/lib/platform-secrets:ro
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  tenant-admin:
+    profiles: ["tenant-admin"]
+    build:
+      context: ../../frontend
+      dockerfile: apps/tenant-admin/Dockerfile
+      args:
+        NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8080
+        NEXT_PUBLIC_KEYCLOAK_REALM: platform-local
+        NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: tenant-admin
+        NEXT_PUBLIC_CATALOGUE_API_URL: http://localhost:8010
+    environment:
+      NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8080
+      NEXT_PUBLIC_KEYCLOAK_REALM: platform-local
+      NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: tenant-admin
+      NEXT_PUBLIC_CATALOGUE_API_URL: http://localhost:8010
+    ports:
+      - "127.0.0.1:3001:3001"
+    depends_on:
+      - keycloak
+      - catalogue
+    security_opt:
+      - no-new-privileges:true
+
   postgres:
     image: postgres:18.7
     restart: unless-stopped
