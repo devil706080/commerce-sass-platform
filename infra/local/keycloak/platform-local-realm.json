@@ -1,0 +1,34 @@
+{
+  "realm": "platform-local",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "roles": { "realm": [{ "name": "platform-operator" }] },
+  "clients": [{
+    "clientId": "platform-console",
+    "enabled": true,
+    "publicClient": true,
+    "standardFlowEnabled": true,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": ["http://localhost:3000/*"],
+    "webOrigins": ["http://localhost:3000"],
+    "attributes": { "pkce.code.challenge.method": "S256" },
+    "protocolMappers": [{
+      "name": "control-api-audience",
+      "protocol": "openid-connect",
+      "protocolMapper": "oidc-audience-mapper",
+      "config": { "included.custom.audience": "control-api", "access.token.claim": "true", "id.token.claim": "false" }
+    }]
+  }],
+  "users": [{
+    "username": "${LOCAL_OPERATOR_EMAIL}",
+    "email": "${LOCAL_OPERATOR_EMAIL}",
+    "firstName": "Local",
+    "lastName": "Operator",
+    "emailVerified": true,
+    "enabled": true,
+    "realmRoles": ["platform-operator"],
+    "credentials": [{ "type": "password", "value": "${LOCAL_OPERATOR_PASSWORD}", "temporary": false }]
+  }]
+}

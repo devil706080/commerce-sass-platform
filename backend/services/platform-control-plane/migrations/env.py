@@ -1,5 +1,5 @@
 from alembic import context
-from sqlalchemy import create_engine, pool
+from sqlalchemy import create_engine, pool, text
 
 from platform_control_plane.core.config import MigrationSettings
 
@@ -17,4 +17,10 @@ else:
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
+            # The local database grants runtime access to new tables by default.
+            # Migration history is an exception and remains migrator-only.
+            if connection.execute(text("SELECT to_regclass('public.alembic_version')")).scalar():
+                connection.execute(
+                    text("REVOKE ALL ON TABLE public.alembic_version FROM platform_control_runtime")
+                )
     engine.dispose()

@@ -1,0 +1,13 @@
+:root { color-scheme: light; --ink:#17231f; --muted:#61706a; --line:#dce5e1; --green:#126b4f; --mint:#e9f5ef; --paper:#f5f7f5; }
+* { box-sizing:border-box; } body { margin:0; font-family:Arial,sans-serif; color:var(--ink); background:var(--paper); }
+button,input { font:inherit; } button { border:0; border-radius:10px; padding:12px 18px; background:var(--green); color:white; font-weight:700; cursor:pointer; }
+.shell { min-height:100vh; display:grid; place-items:center; background:radial-gradient(circle at 20% 20%,#d7efe3,transparent 35%),#f3f5f3; }
+.login-card,.panel { background:white; border:1px solid var(--line); border-radius:18px; box-shadow:0 18px 50px #1e47351a; }
+.login-card { width:min(440px,calc(100% - 32px)); padding:48px; } h1 { margin:8px 0; font-size:clamp(30px,5vw,46px); letter-spacing:-1.5px; } p { color:var(--muted); }
+.eyebrow { color:var(--green); text-transform:uppercase; font-size:12px; font-weight:800; letter-spacing:1.5px; }
+.dashboard { max-width:1180px; margin:auto; padding:48px 24px; } header { display:flex; justify-content:space-between; gap:24px; align-items:flex-start; margin-bottom:36px; }
+.secondary { background:white; color:var(--ink); border:1px solid var(--line); }.grid { display:grid; grid-template-columns:minmax(280px,380px) 1fr; gap:24px; }.panel { padding:28px; }
+h2 { margin-top:0; } label { display:block; font-weight:700; margin:24px 0 8px; } input { width:100%; padding:13px; border:1px solid #b9c8c1; border-radius:9px; margin-bottom:14px; }
+small { display:block; color:var(--muted); margin-top:14px; line-height:1.5; }.section-title { display:flex; justify-content:space-between; align-items:center; }.section-title span,.status { background:var(--mint); color:var(--green); padding:6px 10px; border-radius:999px; font-size:12px; font-weight:800; }
+.list article { display:flex; justify-content:space-between; gap:18px; padding:18px 0; border-top:1px solid var(--line); align-items:center; }.list code { display:block; color:var(--muted); margin-top:6px; font-size:11px; }.empty { padding:48px 0; text-align:center; }
+@media (max-width:760px) { .grid { grid-template-columns:1fr; } header { flex-direction:column; } .login-card { padding:32px; } }

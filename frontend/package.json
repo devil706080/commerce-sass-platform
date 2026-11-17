@@ -1,0 +1,12 @@
+{
+  "name": "commerce-saas-frontend",
+  "private": true,
+  "packageManager": "pnpm@12.19.0",
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck"
+  },
+  "devDependencies": {
+    "turbo": "2.11.11"
+  }
+}

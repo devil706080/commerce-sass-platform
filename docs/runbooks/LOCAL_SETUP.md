@@ -20,6 +20,19 @@ docker compose -f .\infra\local\compose.yaml ps
 
 Open Mailpit at `http://127.0.0.1:8025`. PostgreSQL is `127.0.0.1:5432` and Redis is `127.0.0.1:6379`.
 
+## Optional local operator console
+
+After the Phase 1B database migrations have been approved and applied, generate only missing local identity values and start the selected profiles:
+
+```powershell
+python .\scripts\bootstrap_identity.py
+docker compose --env-file .env -f .\infra\local\compose.yaml --profile identity --profile platform-control --profile platform-console up -d --build
+```
+
+Open `http://localhost:3000` and use `LOCAL_OPERATOR_EMAIL` / `LOCAL_OPERATOR_PASSWORD` from the ignored `.env`. Do not paste them into source code, Postman collections, chat or logs. Keycloak runs at `http://localhost:8080` in development mode and the API at `http://localhost:8000`.
+
+No separate migration command is required for ordinary restarts after Alembic reports revision `003_audit_actor`. Never run migrations with the API runtime or bootstrap administrator identity.
+
 ## Troubleshooting checklist
 
 1. `docker version` fails: start Docker Desktop and wait until the Linux engine is running.
@@ -44,6 +57,8 @@ Record date, Docker/Compose versions, command output, role checks and any port c
 | Mailpit UI | HTTP 200 on localhost:8025; manual browser verification pending | 2026-11-16 |
 | Port bindings | PostgreSQL 5432, Redis 6379, Mailpit 1025 and 8025 bound to 127.0.0.1 | 2026-11-16 |
 | Git ignores secrets | `.env` and `infra/local/secrets/redis.conf` ignored | 2026-11-16 |
+| Local operator authentication | Keycloak Authorization Code + PKCE, issuer/audience/role checks and authorized tenant API passed | 2026-11-17 |
+| Platform console | Production image built; localhost:3000 returned HTTP 200 | 2026-11-17 |
 
 PowerShell sessions with Docker's user installation may need a fresh PATH. Because the Compose file is in `infra/local`, use `docker compose --env-file .env -f .\infra\local\compose.yaml` from the repository root. Manual Mailpit UI inspection, the documented volume-preservation criterion, and the complete Phase 1A exit gate remain unverified.
 

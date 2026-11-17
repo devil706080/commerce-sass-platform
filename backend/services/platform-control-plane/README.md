@@ -5,26 +5,41 @@ Own SaaS-level tenant registry and lifecycle, verified domain mappings, plan/ent
 
 ## Increment A: local foundation
 
-The current implementation exposes `GET /health` (process liveness, independent of PostgreSQL) and `GET /ready` (a `SELECT 1` using the runtime identity; 503 on database failure). `/docs` exposes the generated OpenAPI documentation. No business APIs or domain tables exist yet.
+The implementation exposes `GET /health` (process liveness, independent of PostgreSQL) and `GET /ready` (a `SELECT 1` using the runtime identity; 503 on database failure). `/docs` exposes the generated OpenAPI documentation. A first tenant registry slice defines `POST /api/v1/tenants`, `GET /api/v1/tenants`, and `GET /api/v1/tenants/{tenant_id}`. These routes require a signed OIDC bearer token with the configured issuer, `control-api` audience and `platform-operator` realm role. Missing/invalid authentication returns 401 and missing authorization returns 403.
 
 From the repository root, with Docker Desktop running:
 
 ```powershell
-docker compose --env-file .env -f .\infra\local\compose.yaml --profile platform-control up -d --build platform-control
-docker compose --env-file .env -f .\infra\local\compose.yaml --profile platform-control ps
+python .\scripts\bootstrap_identity.py
+docker compose --env-file .env -f .\infra\local\compose.yaml --profile identity --profile platform-control --profile platform-console up -d --build
+docker compose --env-file .env -f .\infra\local\compose.yaml --profile identity --profile platform-control --profile platform-console ps
 Invoke-RestMethod http://127.0.0.1:8000/health
 Invoke-RestMethod http://127.0.0.1:8000/ready
 ```
 
-The API container receives only `PLATFORM_CONTROL_RUNTIME_PASSWORD`. Required host settings are `DB_HOST` and `PLATFORM_CONTROL_RUNTIME_PASSWORD`; optional settings are `DB_PORT`, `DB_NAME`, `DB_CONNECT_TIMEOUT`, `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, and `DB_POOL_TIMEOUT`. No passwords have defaults. Supply environment variables securely; do not print or commit their values. The migration process separately requires `DB_HOST` and `PLATFORM_CONTROL_MIGRATOR_PASSWORD`. It never uses API credentials.
+The API container receives only `PLATFORM_CONTROL_RUNTIME_PASSWORD`; it does not receive the bootstrap, migrator, worker, provisioner, Keycloak administrator or operator passwords. Runtime OIDC configuration consists of issuer, audience and JWKS URL. The migration process separately requires `DB_HOST` and `PLATFORM_CONTROL_MIGRATOR_PASSWORD`. It never uses API credentials.
 
-To run on the host from this service directory, first securely populate the required environment variables from the ignored root `.env` and set `DB_HOST=127.0.0.1`, then run `uv sync --locked` and `uv run uvicorn platform_control_plane.main:app --host 127.0.0.1 --no-access-log`. Run migrations separately with `uv run alembic upgrade head` using migrator settings. There are currently no revision files or domain schema changes; future revisions belong to this service alone.
+### Local browser label preview
+
+Set these in your current PowerShell session before starting Compose (use your own name):
+
+```powershell
+$env:APP_ENVIRONMENT = 'local'
+$env:LOCAL_TENANT_LABELS = '{"localhost":"Example Store"}'
+docker compose --env-file .env -f .\infra\local\compose.yaml --profile platform-control up -d --build platform-control
+```
+
+Then visit `http://localhost:8000/_local/tenant`. This returns a JSON label, not a storefront or a tenant record. The map can contain `localhost` or explicitly configured lowercase `*.localhost` hostnames only; your machine/browser must resolve each name to loopback. Unknown hosts return 404. It does not authenticate anyone, verify a real domain, use or create a tenant ID, select a database, or make a tenant active. A browser Host header can be forged and must never be treated as trusted identity or authorization. This route is disabled when `APP_ENVIRONMENT=production`; configured local mappings are rejected in production. The production domain and trusted ingress design remain separate future work.
+
+To run on the host from this service directory, first securely populate the required environment variables from the ignored root `.env` and set `DB_HOST=127.0.0.1`, then run `uv sync --locked` and `uv run uvicorn platform_control_plane.main:app --host 127.0.0.1 --no-access-log`. Run migrations separately with `uv run alembic upgrade head` using migrator settings only after explicit owner approval. Revision `001_tenant_registry` creates three platform-metadata tables; future revisions belong to this service alone.
 
 Run `uv lock --check`, `uv run ruff check src tests migrations`, `uv run ruff format --check src tests migrations`, `uv run mypy src`, and `uv run pytest`. Integration tests require `RUN_DB_INTEGRATION=1`, a running local database and the runtime settings. Tests must never use the bootstrap administrator in the API.
 
 The source package contains API routes, Pydantic configuration and safe event logging in `core/`, engine and sessions in `database/`, FastAPI dependencies, and response schemas. `main.py` starts and disposes the engine. `migrations/` configures Alembic with the separate migrator. The Dockerfile uses a non-root user and excludes local secrets from its build context. Request IDs are generated by the server, and log events contain no request bodies, credentials, SQL, or exception strings.
 
-Limitations: health is liveness, not readiness; no authentication or tenant APIs are implemented. The existing database default table grants allow the runtime role to update `alembic_version`; this must be corrected with owner approval before Increment A is complete. Local development passwords are environment variables and production requires a reviewed secret provider. Image tags are version-pinned but not digest-pinned. The service is not approved for production.
+Registry behavior: `POST` requires `Idempotency-Key` (1-128 characters) and a `display_name`; it creates an opaque UUID with status `PENDING`, records an audit event atomically with the authenticated OIDC issuer/subject, returns 201, returns 200 for an identical retry, and returns 409 for a reused key with different content. GET list uses `limit` (1-100, default 20) and `offset` (0-10000); GET by ID returns 404 if absent. The status cannot be activated in this slice.
+
+Limitations: local Keycloak uses development mode and one broad operator role. Production MFA, granular super-admin/support permissions, session revocation policy, rate limiting, TLS and reviewed identity-provider configuration are not implemented. Domain verification, lifecycle transitions and provisioning remain later Phase 1B increments. Each owned table is explicitly restricted, and Alembic revokes runtime access to its version table after online migrations. Local passwords are ignored environment values and production requires a reviewed secret provider. Image tags are version-pinned but not digest-pinned. The service is not approved for production.
 
 ## Data ownership
 Singleton `platform_control` database only. Never store tenant products, customer profiles, carts, inventory, orders, payment transactions or provider secrets in plaintext here. Store opaque secret references only.

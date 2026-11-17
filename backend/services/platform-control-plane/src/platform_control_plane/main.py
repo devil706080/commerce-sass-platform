@@ -6,9 +6,10 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import sessionmaker
 from starlette.middleware.base import RequestResponseEndpoint
+from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
-from platform_control_plane.api.routes import health, readiness
+from platform_control_plane.api.routes import health, local_preview, readiness, tenants
 from platform_control_plane.core.config import RuntimeSettings
 from platform_control_plane.core.logging import log_event
 from platform_control_plane.database.engine import create_runtime_engine
@@ -17,6 +18,7 @@ from platform_control_plane.database.engine import create_runtime_engine
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
     settings = RuntimeSettings()  # type: ignore[call-arg]
+    app.state.settings = settings
     engine = create_runtime_engine(settings)
     app.state.session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     try:
@@ -27,8 +29,19 @@ async def lifespan(app: FastAPI):  # type: ignore[no-untyped-def]
 
 def create_app() -> FastAPI:
     app = FastAPI(title="Platform Control Plane", lifespan=lifespan)
+    settings = RuntimeSettings()  # type: ignore[call-arg]
+    if settings.cors_origins():
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=settings.cors_origins(),
+            allow_credentials=False,
+            allow_methods=["GET", "POST"],
+            allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
+        )
     app.include_router(health.router)
     app.include_router(readiness.router)
+    app.include_router(local_preview.router)
+    app.include_router(tenants.router)
 
     @app.middleware("http")
     async def correlation(request: Request, call_next: RequestResponseEndpoint) -> Response:

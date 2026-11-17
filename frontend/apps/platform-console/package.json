@@ -1,0 +1,8 @@
+{
+  "name": "@commerce-saas/platform-console",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": { "dev": "next dev", "build": "next build", "start": "next start", "typecheck": "tsc --noEmit" },
+  "dependencies": { "keycloak-js": "26.2.2", "next": "16.4.6", "react": "19.2.1", "react-dom": "19.2.1" },
+  "devDependencies": { "@types/node": "26.6.6", "@types/react": "19.2.7", "@types/react-dom": "19.2.3", "typescript": "6.0.3" }
+}
