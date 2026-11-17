@@ -1,6 +1,6 @@
 # Platform administration console
 
-The local operator console uses Keycloak Authorization Code + PKCE S256. A signed token must contain the `platform-operator` realm role and the `control-api` audience. The current UI lists registered tenants and creates tenants in `PENDING` status.
+The local operator console uses Keycloak Authorization Code + PKCE S256. A signed token must contain the `platform-operator` realm role and the `control-api` audience. The dashboard lists and searches tenants, creates tenants in `PENDING` status, and submits confirmed, audited deletion requests.
 
 The browser never connects to PostgreSQL. It calls the Platform Control Plane API, and the API uses its least-privilege runtime database role.
 
@@ -12,5 +12,7 @@ docker compose --env-file .env -f .\infra\local\compose.yaml --profile identity 
 ```
 
 Open `http://localhost:3000`. The generated operator email and password are stored only in the ignored `.env`; do not commit or display them.
+
+Deletion is deliberately a lifecycle request, not a hard-delete. The UI requires the operator to type the tenant name, and the API changes status to `DELETION_REQUESTED`. Retention review and final offboarding remain future workflow steps.
 
 Keycloak runs in development mode for localhost only. MFA, granular admin/support roles, production TLS, server-managed browser sessions, rate limiting and production identity-provider configuration remain required before production use.

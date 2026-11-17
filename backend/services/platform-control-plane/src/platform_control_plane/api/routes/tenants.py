@@ -108,3 +108,48 @@ def get_tenant(tenant_id: UUID, session: SessionDep) -> Any:
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant not found")
     return tenant
+
+
+@router.delete("/{tenant_id}", response_model=TenantResponse)
+def request_tenant_deletion(
+    tenant_id: UUID,
+    session: SessionDep,
+    operator: Annotated[Operator, Depends(require_operator)],
+) -> Any:
+    tenant = (
+        session.execute(
+            text(
+                "UPDATE tenants SET status = 'DELETION_REQUESTED', updated_at = now() "
+                "WHERE id = :id AND status = 'PENDING' "
+                f"RETURNING {_FIELDS}"
+            ),
+            {"id": tenant_id},
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if tenant is None:
+        existing = (
+            session.execute(
+                text(f"SELECT {_FIELDS} FROM tenants WHERE id = :id"), {"id": tenant_id}
+            )
+            .mappings()
+            .one_or_none()
+        )
+        if existing is None:
+            raise HTTPException(status_code=404, detail="Tenant not found")
+        return existing
+    session.execute(
+        text(
+            "INSERT INTO tenant_audit_events (id, tenant_id, action, actor_issuer, actor_subject) "
+            "VALUES (:audit, :tenant, 'TENANT_DELETION_REQUESTED', :issuer, :subject)"
+        ),
+        {
+            "audit": uuid4(),
+            "tenant": tenant_id,
+            "issuer": operator.issuer,
+            "subject": operator.subject,
+        },
+    )
+    session.commit()
+    return tenant

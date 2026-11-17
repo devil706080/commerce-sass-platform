@@ -16,3 +16,6 @@ def test_tenant_routes_fail_closed(monkeypatch):
             ).status_code
             == 403
         )
+        assert (
+            client.delete("/api/v1/tenants/00000000-0000-0000-0000-000000000001").status_code == 403
+        )

@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from platform_control_plane.core.config import RuntimeSettings
+from platform_control_plane.dependencies.database import get_session
 from platform_control_plane.main import create_app
 
 
@@ -11,8 +12,30 @@ def test_local_preview_is_environment_configured(monkeypatch):
     monkeypatch.setenv("PLATFORM_CONTROL_RUNTIME_PASSWORD", "test")
     monkeypatch.setenv("APP_ENVIRONMENT", "local")
     monkeypatch.setenv("LOCAL_TENANT_LABELS", '{"localhost":"Example Store"}')
-    with TestClient(create_app(), base_url="http://localhost") as client:
-        assert client.get("/_local/tenant").json()["display_name"] == "Example Store"
+
+    class Result:
+        def mappings(self):
+            return self
+
+        def one_or_none(self):
+            return {
+                "tenant_id": "00000000-0000-0000-0000-000000000001",
+                "hostname": "localhost",
+                "display_name": "Example Store",
+                "tenant_status": "PENDING",
+                "domain_status": "VERIFIED",
+            }
+
+    class Session:
+        def execute(self, statement, parameters):
+            return Result()
+
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: Session()
+    with TestClient(app, base_url="http://localhost") as client:
+        preview = client.get("/_local/tenant").json()
+        assert preview["display_name"] == "Example Store"
+        assert preview["domain_status"] == "VERIFIED"
         assert (
             client.get("/_local/tenant", headers={"Host": "unknown.localhost"}).status_code == 404
         )

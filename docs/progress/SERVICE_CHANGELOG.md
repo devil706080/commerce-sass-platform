@@ -32,3 +32,18 @@
 - `frontend/apps/platform-console/`: responsive Next.js operator login, tenant list and pending-tenant creation UI.
 - `frontend/package.json`, `pnpm-workspace.yaml`, `pnpm-lock.yaml`, `turbo.json`: pinned pnpm/Turborepo workspace and reproducible dependency graph.
 - Local end-to-end Authorization Code + PKCE, token claims and authorized tenant API were verified without printing passwords or tokens.
+
+## Audited deletion request and console redesign
+
+- `004_tenant_deletion_request.py`: adds `DELETION_REQUESTED` and grants the runtime role column-level UPDATE only for `status` and `updated_at`.
+- `DELETE /api/v1/tenants/{tenant_id}`: idempotently requests deletion and records the authenticated operator; no hard-delete occurs.
+- Platform console: new operational dashboard, metrics, search/filter controls, responsive registry, protected name-confirmation dialog and clearer login experience.
+- Tests cover fail-closed DELETE authorization, transition behavior and repeated requests. Runtime audit-table reads remain denied.
+- CORS explicitly permits `DELETE` from the configured console origin; a preflight regression test prevents the browser failure from returning.
+
+## Local domain verification and Lifemac onboarding
+
+- `005_tenant_domains.py`: unique domain records with pending/verified state, local method, timestamps and least-privilege grants.
+- Nested domain APIs normalize/register/list/verify only `localhost` and `*.localhost`; verification requires the environment allowlist and records operator audit events.
+- `/_local/tenant` now resolves only an allowlisted, database-verified domain to a non-deleting tenant; it remains explicitly non-authoritative for authorization.
+- Lifemac Pharma was created through the Keycloak-protected API and `lifemac.localhost` was verified without printing credentials or tokens.

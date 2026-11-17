@@ -48,3 +48,23 @@ Follow-up: migration `003_audit_actor` was applied with owner authorization via 
 - CORS preflight allowed `http://localhost:3000` and the Authorization header.
 - Recreated API reports healthy/ready; recreated console returns HTTP 200 on loopback port 3000.
 - No browser automation tool was available for a visual click-through; manual sign-in/UI interaction remains for the user. No vulnerability scan, accessibility audit, MFA/session-revocation test or production identity review was performed.
+
+## Deletion request and console redesign (2026-11-17)
+
+- Migration `004_tenant_deletion_request` applied through `platform_control_migrator`; Alembic reports it as head.
+- Privilege verification returned `f|t|t|f`: no table-wide runtime UPDATE, UPDATE permitted on `status` and `updated_at`, denied on `display_name`.
+- Ruff check, Ruff formatting and MyPy: passed.
+- Full suite with PostgreSQL integration: 15 passed; the existing Starlette/httpx and local pytest-cache warnings remain.
+- Strict TypeScript check and Next.js 16.4.6 production build: passed.
+- Updated API and console images built and recreated; API healthy, console HTTP 200, DELETE present in OpenAPI.
+- No real tenant was modified during container smoke checks. Visual browser automation was unavailable, so final appearance and interaction require the user's manual browser review.
+- DELETE CORS regression: the initial browser attempt was blocked because only GET/POST were allowlisted. DELETE was added explicitly; the full suite now passes 16 tests and the running preflight returns 200 with `GET, POST, DELETE`.
+
+## Local domain verification and first onboarding (2026-11-17)
+
+- Migration `005_tenant_domains` applied through `platform_control_migrator`; Alembic reports it as head.
+- Ruff, formatting and MyPy passed; full PostgreSQL suite passed 19 tests with the existing two warnings.
+- Tests cover hostname normalization, public-host rejection, duplicate ownership, unconfigured verification failure, successful verification, listing and database-backed preview resolution.
+- Real Keycloak-protected onboarding created Lifemac Pharma in `PENDING` and verified `lifemac.localhost` with method `LOCAL`.
+- Running preview resolved `lifemac.localhost` to the correct opaque tenant ID with `VERIFIED` domain status; `unknown.localhost` returned 404.
+- No public DNS, hosting provider, tenant service database or activation was performed.

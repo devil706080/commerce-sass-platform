@@ -1,3 +1,4 @@
+import json
 import os
 from uuid import uuid4
 
@@ -64,6 +65,87 @@ def test_registry_create_idempotency_and_reads():
             assert client.get(f"/api/v1/tenants/{tenant['id']}").json() == tenant
             assert client.get("/api/v1/tenants?limit=101").status_code == 422
             assert any(t["id"] == tenant["id"] for t in client.get("/api/v1/tenants").json())
+            deletion = client.delete(f"/api/v1/tenants/{tenant['id']}")
+            assert deletion.status_code == 200
+            assert deletion.json()["status"] == "DELETION_REQUESTED"
+            repeated_deletion = client.delete(f"/api/v1/tenants/{tenant['id']}")
+            assert repeated_deletion.status_code == 200
+            assert repeated_deletion.json()["status"] == "DELETION_REQUESTED"
+        session.close()
+        transaction.rollback()
+    engine.dispose()
+
+
+def test_local_domain_registration_and_verification(monkeypatch):
+    host = f"tenant-{uuid4().hex}.localhost"
+    unconfigured_host = f"unconfigured-{uuid4().hex}.localhost"
+    monkeypatch.setenv("APP_ENVIRONMENT", "local")
+    monkeypatch.setenv("LOCAL_TENANT_LABELS", json.dumps({host: "Domain Test"}))
+    engine = create_runtime_engine(RuntimeSettings())
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        session = Session(bind=connection, join_transaction_mode="create_savepoint")
+        app = create_app()
+        app.dependency_overrides[require_operator] = lambda: Operator(
+            "test-issuer", "test-operator"
+        )
+        app.dependency_overrides[get_session] = lambda: session
+        with TestClient(app) as client:
+            first_tenant = client.post(
+                "/api/v1/tenants",
+                json={"display_name": f"Domain Test {uuid4().hex}"},
+                headers={"Idempotency-Key": str(uuid4())},
+            ).json()
+            second_tenant = client.post(
+                "/api/v1/tenants",
+                json={"display_name": f"Domain Conflict {uuid4().hex}"},
+                headers={"Idempotency-Key": str(uuid4())},
+            ).json()
+            registered = client.post(
+                f"/api/v1/tenants/{first_tenant['id']}/domains",
+                json={"hostname": host.upper() + "."},
+            )
+            assert registered.status_code == 201
+            domain = registered.json()
+            assert domain["hostname"] == host
+            assert domain["verification_status"] == "PENDING_VERIFICATION"
+            repeat = client.post(
+                f"/api/v1/tenants/{first_tenant['id']}/domains",
+                json={"hostname": host},
+            )
+            assert repeat.status_code == 200
+            assert repeat.json()["id"] == domain["id"]
+            conflict = client.post(
+                f"/api/v1/tenants/{second_tenant['id']}/domains",
+                json={"hostname": host},
+            )
+            assert conflict.status_code == 409
+            assert (
+                client.post(
+                    f"/api/v1/tenants/{first_tenant['id']}/domains",
+                    json={"hostname": "example.com"},
+                ).status_code
+                == 422
+            )
+            unconfigured = client.post(
+                f"/api/v1/tenants/{first_tenant['id']}/domains",
+                json={"hostname": unconfigured_host},
+            ).json()
+            failed_verification = client.post(
+                f"/api/v1/tenants/{first_tenant['id']}/domains/{unconfigured['id']}/verify"
+            )
+            assert failed_verification.status_code == 409
+            verified = client.post(
+                f"/api/v1/tenants/{first_tenant['id']}/domains/{domain['id']}/verify"
+            )
+            assert verified.status_code == 200
+            assert verified.json()["verification_status"] == "VERIFIED"
+            preview = client.get("/_local/tenant", headers={"Host": host})
+            assert preview.status_code == 200
+            assert preview.json()["tenant_id"] == first_tenant["id"]
+            assert preview.json()["domain_status"] == "VERIFIED"
+            listed = client.get(f"/api/v1/tenants/{first_tenant['id']}/domains").json()
+            assert {item["hostname"] for item in listed} == {host, unconfigured_host}
         session.close()
         transaction.rollback()
     engine.dispose()
