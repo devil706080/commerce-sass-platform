@@ -9,7 +9,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Catalogue Service", version="0.1.0", lifespan=lifespan)
 app.state.settings = __import__("catalogue.config.settings", fromlist=["load_settings"]).load_settings()
-app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3001"], allow_credentials=False, allow_methods=["GET", "POST", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type"])
+app.add_middleware(CORSMiddleware, allow_origins=["http://localhost:3001"], allow_credentials=False, allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"], allow_headers=["Authorization", "Content-Type"])
 app.include_router(health.router)
 app.include_router(products.router)
 app.include_router(categories.router)

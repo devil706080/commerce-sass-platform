@@ -36,6 +36,15 @@
       "name": "tenant-id", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper",
       "config": { "claim.value": "49e84243-f9e4-4981-b3a5-38f943cc79ba", "claim.name": "tenant_id", "claim.jsonType": "String", "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true" }
     }]
+  }, {
+    "clientId": "storefront",
+    "enabled": true,
+    "publicClient": true,
+    "standardFlowEnabled": true,
+    "directAccessGrantsEnabled": false,
+    "redirectUris": ["http://localhost:3002/*"],
+    "webOrigins": ["http://localhost:3002"],
+    "attributes": { "pkce.code.challenge.method": "S256" }
   }],
   "users": [{
     "username": "${LOCAL_OPERATOR_EMAIL}",

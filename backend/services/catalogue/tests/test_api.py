@@ -16,3 +16,25 @@ def test_public_catalogue_route_is_read_only(monkeypatch):
         response = client.get("/api/v1/store/products")
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_public_categories_only_uses_catalogue_public_projection(monkeypatch):
+    monkeypatch.setattr(ProductRepository, "public_categories", lambda *_: [])
+    with TestClient(app) as client:
+        response = client.get("/api/v1/store/categories")
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_public_product_category_filter_is_forwarded(monkeypatch):
+    received = {}
+
+    def list_products(_self, search, published, limit, offset, category_slug=None):
+        received.update(search=search, published=published, limit=limit, offset=offset, category_slug=category_slug)
+        return []
+
+    monkeypatch.setattr(ProductRepository, "list", list_products)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/store/products?category=wellness")
+    assert response.status_code == 200
+    assert received == {"search": None, "published": True, "limit": 50, "offset": 0, "category_slug": "wellness"}

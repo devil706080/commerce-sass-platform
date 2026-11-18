@@ -1,6 +1,8 @@
 # Tenant administration console
 
-**Status:** Folder placeholder only. The app runtime will be scaffolded after the frontend workspace and app contracts are approved.
+**Status:** Catalogue-management increment implemented. The application provides
+an explicit Keycloak login entry point, role-gated access, category management,
+product creation, category assignment and publication-state management.
 
 Tenant staff application for catalogue, pricing, inventory, orders, promotions, content, reporting, team and settings. Enforce role/permission-aware navigation and API authorization.
 
@@ -18,4 +20,7 @@ tenant-admin/
 └── tests/
 ```
 
-Use shared neutral primitives from `frontend/packages/ui` and validated tokens from `frontend/packages/design-tokens`. Do not hardcode client brand names or themes. Include responsive, accessible loading, empty, error, permission-denied and success states.
+The application calls the Catalogue API only; it never connects to a database.
+Orders, delivery, pricing, stock and customer data are intentionally absent until
+their owning service contracts exist. A category appears in the storefront only
+when a published product is assigned to it.
