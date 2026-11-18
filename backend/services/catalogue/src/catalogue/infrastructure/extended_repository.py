@@ -7,18 +7,49 @@ from catalogue.schemas.extended import Image, ImageCreate, Variant, VariantCreat
 class ExtendedRepository:
     def __init__(self, settings):
         self.settings = settings; self.schema = quote_identifier(settings.schema_name)
+
+    def _product_exists(self, db, product_id, published_only=False):
+        clause = " AND published = TRUE" if published_only else ""
+        return db.execute(f"SELECT 1 FROM {self.schema}.products WHERE id=%s{clause}", (product_id,)).fetchone() is not None
+
     def images(self, product_id):
         with connect(self.settings) as db:
+            if not self._product_exists(db, product_id): raise LookupError("Product not found")
             rows=db.execute(f"SELECT id,url,alt_text,sort_order FROM {self.schema}.product_images WHERE product_id=%s ORDER BY sort_order,id",(product_id,)).fetchall()
         return [Image(id=r[0],url=r[1],alt_text=r[2],sort_order=r[3]) for r in rows]
+
+    def public_images(self, product_id):
+        with connect(self.settings) as db:
+            if not self._product_exists(db, product_id, published_only=True): raise LookupError("Product not found")
+            rows=db.execute(f"SELECT id,url,alt_text,sort_order FROM {self.schema}.product_images WHERE product_id=%s ORDER BY sort_order,id",(product_id,)).fetchall()
+        return [Image(id=r[0],url=r[1],alt_text=r[2],sort_order=r[3]) for r in rows]
+
     def add_image(self, product_id, payload: ImageCreate):
         try:
             with connect(self.settings) as db:
                 r=db.execute(f"INSERT INTO {self.schema}.product_images(id,product_id,url,alt_text,sort_order) VALUES(%s,%s,%s,%s,%s) RETURNING id,url,alt_text,sort_order",(uuid4(),product_id,payload.url,payload.alt_text,payload.sort_order)).fetchone(); db.commit()
         except psycopg.errors.ForeignKeyViolation as exc: raise LookupError("Product not found") from exc
         return Image(id=r[0],url=r[1],alt_text=r[2],sort_order=r[3])
+
+    def update_image(self, product_id, image_id, payload):
+        values = payload.model_dump(exclude_unset=True)
+        if not values: raise ValueError("At least one image field is required")
+        assignments = ", ".join(f"{key} = %s" for key in values)
+        with connect(self.settings) as db:
+            row = db.execute(f"UPDATE {self.schema}.product_images SET {assignments} WHERE id=%s AND product_id=%s RETURNING id,url,alt_text,sort_order", [*values.values(), image_id, product_id]).fetchone()
+            if row is None: raise LookupError("Product image not found")
+            db.commit()
+        return Image(id=row[0],url=row[1],alt_text=row[2],sort_order=row[3])
+
+    def delete_image(self, product_id, image_id):
+        with connect(self.settings) as db:
+            result = db.execute(f"DELETE FROM {self.schema}.product_images WHERE id=%s AND product_id=%s", (image_id, product_id))
+            if result.rowcount == 0: raise LookupError("Product image not found")
+            db.commit()
+
     def variants(self, product_id):
         with connect(self.settings) as db:
+            if not self._product_exists(db, product_id): raise LookupError("Product not found")
             rows=db.execute(f"SELECT id,product_id,sku,name,price_cents,attributes FROM {self.schema}.product_variants WHERE product_id=%s ORDER BY name",(product_id,)).fetchall()
         return [Variant(id=r[0],product_id=r[1],sku=r[2],name=r[3],price_cents=r[4],attributes=r[5]) for r in rows]
     def add_variant(self, product_id, payload: VariantCreate):
@@ -28,8 +59,29 @@ class ExtendedRepository:
         except psycopg.errors.UniqueViolation as exc: raise ValueError("A variant with this SKU already exists") from exc
         except psycopg.errors.ForeignKeyViolation as exc: raise LookupError("Product not found") from exc
         return Variant(id=r[0],product_id=r[1],sku=r[2],name=r[3],price_cents=r[4],attributes=r[5])
+
+    def update_variant(self, product_id, variant_id, payload):
+        values = payload.model_dump(exclude_unset=True)
+        if not values: raise ValueError("At least one variant field is required")
+        if "attributes" in values: values["attributes"] = json.dumps(values["attributes"])
+        assignments = ", ".join(f"{key} = %s" for key in values)
+        try:
+            with connect(self.settings) as db:
+                row = db.execute(f"UPDATE {self.schema}.product_variants SET {assignments} WHERE id=%s AND product_id=%s RETURNING id,product_id,sku,name,price_cents,attributes", [*values.values(), variant_id, product_id]).fetchone()
+                if row is None: raise LookupError("Product variant not found")
+                db.commit()
+        except psycopg.errors.UniqueViolation as exc: raise ValueError("A variant with this SKU already exists") from exc
+        return Variant(id=row[0],product_id=row[1],sku=row[2],name=row[3],price_cents=row[4],attributes=row[5])
+
+    def delete_variant(self, product_id, variant_id):
+        with connect(self.settings) as db:
+            result = db.execute(f"DELETE FROM {self.schema}.product_variants WHERE id=%s AND product_id=%s", (variant_id, product_id))
+            if result.rowcount == 0: raise LookupError("Product variant not found")
+            db.commit()
+
     def prices(self, product_id):
         with connect(self.settings) as db:
+            if not self._product_exists(db, product_id): raise LookupError("Product not found")
             rows=db.execute(f"SELECT id,name,price_cents,currency,active FROM {self.schema}.product_prices WHERE product_id=%s ORDER BY name",(product_id,)).fetchall()
         return [PriceRule(id=r[0],name=r[1],price_cents=r[2],currency=r[3],active=r[4]) for r in rows]
     def add_price(self, product_id, payload: PriceRuleCreate):
@@ -38,3 +90,19 @@ class ExtendedRepository:
                 r=db.execute(f"INSERT INTO {self.schema}.product_prices(id,product_id,name,price_cents,currency,active) VALUES(%s,%s,%s,%s,%s,%s) RETURNING id,name,price_cents,currency,active",(uuid4(),product_id,payload.name,payload.price_cents,payload.currency,payload.active)).fetchone(); db.commit()
         except psycopg.errors.ForeignKeyViolation as exc: raise LookupError("Product not found") from exc
         return PriceRule(id=r[0],name=r[1],price_cents=r[2],currency=r[3],active=r[4])
+
+    def update_price(self, product_id, price_id, payload):
+        values = payload.model_dump(exclude_unset=True)
+        if not values: raise ValueError("At least one price field is required")
+        assignments = ", ".join(f"{key} = %s" for key in values)
+        with connect(self.settings) as db:
+            row = db.execute(f"UPDATE {self.schema}.product_prices SET {assignments} WHERE id=%s AND product_id=%s RETURNING id,name,price_cents,currency,active", [*values.values(), price_id, product_id]).fetchone()
+            if row is None: raise LookupError("Product price rule not found")
+            db.commit()
+        return PriceRule(id=row[0],name=row[1],price_cents=row[2],currency=row[3],active=row[4])
+
+    def delete_price(self, product_id, price_id):
+        with connect(self.settings) as db:
+            result = db.execute(f"DELETE FROM {self.schema}.product_prices WHERE id=%s AND product_id=%s", (price_id, product_id))
+            if result.rowcount == 0: raise LookupError("Product price rule not found")
+            db.commit()

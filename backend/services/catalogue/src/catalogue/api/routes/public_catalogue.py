@@ -2,8 +2,10 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException, Query
 from catalogue.config.settings import load_settings
 from catalogue.infrastructure.product_repository import ProductRepository
+from catalogue.infrastructure.extended_repository import ExtendedRepository
 from catalogue.schemas.category import Category
 from catalogue.schemas.product import Product
+from catalogue.schemas.extended import Image
 
 router = APIRouter(prefix="/api/v1/store")
 
@@ -25,3 +27,10 @@ def public_product(product_id: UUID):
     if not product.published:
         raise HTTPException(status_code=404, detail="Product not found")
     return product
+
+@router.get("/products/{product_id}/images", response_model=list[Image])
+def public_product_images(product_id: UUID):
+    try:
+        return ExtendedRepository(load_settings()).public_images(product_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="Product not found") from exc

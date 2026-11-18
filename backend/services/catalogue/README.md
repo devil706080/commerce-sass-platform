@@ -1,6 +1,14 @@
 # Catalogue
 
-**Status:** Catalogue backend increment implemented: tenant-admin JWT authorization, product CRUD/detail/search, category CRUD, and tenant-isolated `catfx` products/categories storage. Public category reads expose only categories with at least one assigned published product; category filtering uses the category slug. Runtime DDL is owned by the service migration job; API startup does not mutate schema.
+**Status:** Catalogue backend increment implemented: tenant-admin JWT authorization, product/category CRUD, product-category assignments, image metadata CRUD, variant CRUD, and product price-rule CRUD in tenant-isolated `catfx` storage. Public category reads expose only categories with at least one assigned published product; category filtering uses the category slug; published product image metadata is publicly readable. Runtime DDL is owned by the service migration job; API startup does not mutate schema.
+
+## Current API boundary
+
+- Tenant-admin JWT routes manage products, categories, image metadata, variants and current catalogue price rules.
+- Swagger/OpenAPI declares HTTP Bearer JWT authentication, so local staff can use the **Authorize** control with a valid Keycloak access token.
+- Public storefront routes expose only published products, qualifying categories and image metadata for published products.
+- Image records hold only externally hosted `http`/`https` URLs, alt text and ordering. Upload, malware scanning, transformations and object storage are **not** implemented here; those belong to the future Media service.
+- Catalogue price rules are the current local catalogue capability. Checkout pricing must later be calculated by the dedicated Pricing service; a browser must never calculate the final charge.
 
 ## Bounded context and data ownership
 

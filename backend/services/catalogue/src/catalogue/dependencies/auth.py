@@ -1,7 +1,13 @@
 from dataclasses import dataclass
 import jwt
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, Security, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt import PyJWKClient
+
+bearer_scheme = HTTPBearer(
+    bearerFormat="JWT",
+    description="Keycloak access token for a tenant-admin or platform-operator account.",
+)
 
 @dataclass(frozen=True)
 class CatalogueIdentity:
@@ -9,15 +15,17 @@ class CatalogueIdentity:
     tenant_id: str
     roles: tuple[str, ...]
 
-def require_catalogue_admin(request: Request) -> CatalogueIdentity:
+def require_catalogue_admin(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Security(bearer_scheme),
+) -> CatalogueIdentity:
     settings = request.app.state.settings
-    auth = request.headers.get("Authorization", "")
     if not all((settings.oidc_issuer, settings.oidc_audience, settings.oidc_jwks_url)):
         raise HTTPException(status_code=503, detail="Catalogue authentication is unavailable")
-    if not auth.startswith("Bearer ") or len(auth) > 8192:
+    if credentials.scheme.lower() != "bearer" or not credentials.credentials or len(credentials.credentials) > 8192:
         raise HTTPException(status_code=401, detail="Authentication required")
     try:
-        token = auth[7:]
+        token = credentials.credentials
         key = PyJWKClient(settings.oidc_jwks_url, timeout=3).get_signing_key_from_jwt(token)
         claims = jwt.decode(token, key.key, algorithms=["RS256"], audience=settings.oidc_audience, issuer=settings.oidc_issuer, options={"require": ["exp", "iat", "sub"]})
     except (jwt.PyJWTError, OSError, ValueError):
