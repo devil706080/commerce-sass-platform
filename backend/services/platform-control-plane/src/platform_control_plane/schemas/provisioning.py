@@ -4,7 +4,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
-ServiceKey = Literal["catalogue_fixture", "inventory_fixture"]
+ServiceKey = Literal["catalogue_fixture", "inventory_fixture", "media_fixture"]
 
 
 class ProvisioningRequest(BaseModel):

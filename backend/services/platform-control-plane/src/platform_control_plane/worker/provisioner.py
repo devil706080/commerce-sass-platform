@@ -8,7 +8,7 @@ from uuid import UUID
 import psycopg
 from psycopg import sql
 
-SERVICE_CODES = {"catalogue_fixture": "catfx", "inventory_fixture": "invfx"}
+SERVICE_CODES = {"catalogue_fixture": "catfx", "inventory_fixture": "invfx", "media_fixture": "medfx"}
 
 
 @dataclass(frozen=True)

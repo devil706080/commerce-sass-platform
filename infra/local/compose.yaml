@@ -157,6 +157,7 @@ services:
         NEXT_PUBLIC_KEYCLOAK_REALM: platform-local
         NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: tenant-admin
         NEXT_PUBLIC_CATALOGUE_API_URL: http://localhost:8010
+        NEXT_PUBLIC_MEDIA_API_URL: http://localhost:8020
         NEXT_PUBLIC_TENANT_ADMIN_NAME: Lifemac Pharma
         NEXT_PUBLIC_TENANT_ADMIN_PRIMARY: "#0969b8"
         NEXT_PUBLIC_TENANT_ADMIN_PRIMARY_DARK: "#064a87"
@@ -166,6 +167,7 @@ services:
       NEXT_PUBLIC_KEYCLOAK_REALM: platform-local
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: tenant-admin
       NEXT_PUBLIC_CATALOGUE_API_URL: http://localhost:8010
+      NEXT_PUBLIC_MEDIA_API_URL: http://localhost:8020
       NEXT_PUBLIC_TENANT_ADMIN_NAME: Lifemac Pharma
       NEXT_PUBLIC_TENANT_ADMIN_PRIMARY: "#0969b8"
       NEXT_PUBLIC_TENANT_ADMIN_PRIMARY_DARK: "#064a87"
@@ -175,6 +177,33 @@ services:
     depends_on:
       - keycloak
       - catalogue
+    security_opt:
+      - no-new-privileges:true
+
+  media:
+    profiles: ["media"]
+    build:
+      context: ../../backend/services/media
+    environment:
+      MEDIA_SECRET_FILE: ${MEDIA_SECRET_FILE:-}
+      MEDIA_DATABASE_NAME: t_49e84243f9e44981b3a538f943cc79ba
+      MEDIA_RUNTIME_ROLE: t_49e84243f9e44981b3a538f943cc79ba_medfx_rt
+      MEDIA_DB_HOST: postgres
+      MEDIA_DB_PORT: 5432
+      MEDIA_SCHEMA: medfx
+      MEDIA_STORAGE_ROOT: /var/lib/commerce-media
+      MEDIA_OIDC_ISSUER: http://localhost:8080/realms/platform-local
+      MEDIA_OIDC_AUDIENCE: media-api
+      MEDIA_OIDC_JWKS_URL: http://keycloak:8080/realms/platform-local/protocol/openid-connect/certs
+    ports:
+      - "127.0.0.1:8020:8020"
+    volumes:
+      - provisioned_secrets:/var/lib/platform-secrets:ro
+      - tenant_media:/var/lib/commerce-media
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
     security_opt:
       - no-new-privileges:true
 
@@ -189,8 +218,7 @@ services:
         NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: storefront
     environment:
       CATALOGUE_API_INTERNAL_URL: http://catalogue:8010
-      STOREFRONT_DEFAULT_HOST: localhost
-      STOREFRONT_TENANT_CONFIG: '{"localhost":{"name":"Lifemac Pharma","shortName":"LP","locationLabel":"Local delivery","supportLine":"Trusted healthcare · Clear catalogue pricing · Secure customer access","primary":"#0969b8","primaryDark":"#064a87","accent":"#12b889","categories":[{"label":"Medicines","query":"medicine","symbol":"Rx"},{"label":"Wellness","query":"wellness","symbol":"W"},{"label":"Vitamins","query":"vitamin","symbol":"V"},{"label":"Personal Care","query":"care","symbol":"PC"},{"label":"Devices","query":"device","symbol":"D"},{"label":"Baby Care","query":"baby","symbol":"BC"},{"label":"First Aid","query":"first aid","symbol":"+"},{"label":"Everyday Health","query":"health","symbol":"EH"}]}}'
+      CONTROL_PLANE_INTERNAL_URL: http://platform-control:8000
       NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8080
       NEXT_PUBLIC_KEYCLOAK_REALM: platform-local
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: storefront
@@ -199,6 +227,7 @@ services:
     depends_on:
       - keycloak
       - catalogue
+      - platform-control
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -278,3 +307,4 @@ volumes:
   redis_data:
   rabbitmq_data:
   provisioned_secrets:
+  tenant_media:

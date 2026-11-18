@@ -13,7 +13,7 @@ class LocalPreview(BaseModel):
     tenant_id: UUID
     hostname: str
     display_name: str
-    tenant_status: Literal["PENDING"]
+    tenant_status: Literal["PENDING", "PROVISIONING", "ACTIVE"]
     domain_status: Literal["VERIFIED"]
     notice: str = "Local preview only; not tenant authorization or database routing authority."
 
@@ -29,7 +29,8 @@ def local_preview(
     settings = request.app.state.settings
     if settings.app_environment != "local":
         raise HTTPException(status_code=404, detail="Not found")
-    hostname = request.url.hostname
+    forwarded = request.headers.get("x-forwarded-host", "").split(",", 1)[0].strip()
+    hostname = forwarded.split(":", 1)[0].lower() if forwarded else request.url.hostname
     if (hostname or "") not in settings.local_labels():
         raise HTTPException(status_code=404, detail="Local tenant preview not configured")
     tenant = (
@@ -39,7 +40,7 @@ def local_preview(
                 "d.hostname, d.verification_status AS domain_status "
                 "FROM tenant_domains d JOIN tenants t ON t.id = d.tenant_id "
                 "WHERE d.hostname = :hostname AND d.verification_status = 'VERIFIED' "
-                "AND t.status = 'PENDING'"
+                "AND t.status IN ('PENDING', 'PROVISIONING', 'ACTIVE')"
             ),
             {"hostname": hostname},
         )
