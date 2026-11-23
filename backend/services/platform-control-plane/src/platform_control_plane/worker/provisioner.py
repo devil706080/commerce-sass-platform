@@ -8,7 +8,12 @@ from uuid import UUID
 import psycopg
 from psycopg import sql
 
-SERVICE_CODES = {"catalogue_fixture": "catfx", "inventory_fixture": "invfx", "media_fixture": "medfx"}
+SERVICE_CODES = {
+    "catalogue_fixture": "catfx",
+    "inventory_fixture": "invfx",
+    "media_fixture": "medfx",
+    "identity_access": "identity",
+}
 
 
 @dataclass(frozen=True)
@@ -91,8 +96,11 @@ def create_database_infrastructure(
                         "NOCREATEROLE NOREPLICATION CONNECTION LIMIT 20"
                     ).format(sql.Identifier(role), sql.Literal(password))
                 )
+        # Reassert SET membership on every idempotent retry. Earlier local runs may have left
+        # a membership without SET OPTION; membership alone cannot create a database owned by
+        # this generated role.
         connection.execute(
-            sql.SQL("GRANT {} TO tenant_database_provisioner WITH ADMIN OPTION, SET TRUE").format(
+            sql.SQL("GRANT {} TO tenant_database_provisioner WITH SET TRUE").format(
                 sql.Identifier(identity.owner_role)
             )
         )
@@ -129,41 +137,49 @@ def create_database_infrastructure(
                     sql.Identifier(identity.database_name), sql.Identifier(identity.owner_role)
                 )
             )
-        finally:
+        except BaseException:
             connection.execute(
                 sql.SQL("REVOKE {} FROM tenant_database_provisioner").format(
                     sql.Identifier(identity.owner_role)
                 )
             )
-    with psycopg.connect(
-        provisioner_dsn, dbname=identity.database_name, autocommit=True
-    ) as tenant_connection:
-        tenant_connection.execute(
-            sql.SQL("SET ROLE {}").format(sql.Identifier(identity.owner_role))
-        )
-        tenant_connection.execute(
-            sql.SQL("CREATE SCHEMA IF NOT EXISTS {} AUTHORIZATION {}").format(
-                sql.Identifier(identity.schema_name), sql.Identifier(identity.owner_role)
+            raise
+    try:
+        with psycopg.connect(
+            provisioner_dsn, dbname=identity.database_name, autocommit=True
+        ) as tenant_connection:
+            tenant_connection.execute(
+                sql.SQL("SET ROLE {}").format(sql.Identifier(identity.owner_role))
             )
-        )
-        tenant_connection.execute(
-            sql.SQL("REVOKE ALL ON SCHEMA {} FROM PUBLIC").format(
-                sql.Identifier(identity.schema_name)
+            tenant_connection.execute(
+                sql.SQL("CREATE SCHEMA IF NOT EXISTS {} AUTHORIZATION {}").format(
+                    sql.Identifier(identity.schema_name), sql.Identifier(identity.owner_role)
+                )
             )
-        )
-        tenant_connection.execute(
-            sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
-                sql.Identifier(identity.schema_name), sql.Identifier(identity.runtime_role)
+            tenant_connection.execute(
+                sql.SQL("REVOKE ALL ON SCHEMA {} FROM PUBLIC").format(
+                    sql.Identifier(identity.schema_name)
+                )
             )
-        )
-        tenant_connection.execute(
-            sql.SQL("GRANT USAGE, CREATE ON SCHEMA {} TO {}").format(
-                sql.Identifier(identity.schema_name), sql.Identifier(identity.migrator_role)
+            tenant_connection.execute(
+                sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+                    sql.Identifier(identity.schema_name), sql.Identifier(identity.runtime_role)
+                )
             )
-        )
-    with psycopg.connect(provisioner_dsn, autocommit=True) as connection:
-        connection.execute(
-            sql.SQL("REVOKE CONNECT ON DATABASE {} FROM tenant_database_provisioner").format(
-                sql.Identifier(identity.database_name)
+            tenant_connection.execute(
+                sql.SQL("GRANT USAGE, CREATE ON SCHEMA {} TO {}").format(
+                    sql.Identifier(identity.schema_name), sql.Identifier(identity.migrator_role)
+                )
             )
-        )
+    finally:
+        with psycopg.connect(provisioner_dsn, autocommit=True) as connection:
+            connection.execute(
+                sql.SQL("REVOKE {} FROM tenant_database_provisioner").format(
+                    sql.Identifier(identity.owner_role)
+                )
+            )
+            connection.execute(
+                sql.SQL("REVOKE CONNECT ON DATABASE {} FROM tenant_database_provisioner").format(
+                    sql.Identifier(identity.database_name)
+                )
+            )

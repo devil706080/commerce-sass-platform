@@ -11,7 +11,10 @@ def test_tenant_routes_fail_closed(monkeypatch):
         assert (
             client.post(
                 "/api/v1/tenants",
-                json={"display_name": "Example"},
+                json={
+                    "display_name": "Example",
+                    "initial_owner_email": "owner@example.com",
+                },
                 headers={"Idempotency-Key": "example"},
             ).status_code
             == 403

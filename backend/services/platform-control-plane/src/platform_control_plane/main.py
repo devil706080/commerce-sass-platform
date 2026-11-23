@@ -10,6 +10,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.responses import Response
 
 from platform_control_plane.api.routes import (
+    branding,
     domains,
     health,
     local_preview,
@@ -42,13 +43,14 @@ def create_app() -> FastAPI:
             CORSMiddleware,
             allow_origins=settings.cors_origins(),
             allow_credentials=False,
-            allow_methods=["GET", "POST", "DELETE"],
+            allow_methods=["GET", "POST", "PUT", "DELETE"],
             allow_headers=["Authorization", "Content-Type", "Idempotency-Key"],
         )
     app.include_router(health.router)
     app.include_router(readiness.router)
     app.include_router(local_preview.router)
     app.include_router(tenants.router)
+    app.include_router(branding.router)
     app.include_router(domains.router)
     app.include_router(provisioning.router)
 

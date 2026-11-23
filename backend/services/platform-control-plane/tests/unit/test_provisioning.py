@@ -4,20 +4,27 @@ from pathlib import Path
 from uuid import UUID, uuid4
 
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from platform_control_plane.core.config import RuntimeSettings, WorkerSettings
+from platform_control_plane.schemas.provisioning import ProvisioningRequest
 from platform_control_plane.worker.provisioner import database_identity, load_or_create_secrets
+from platform_control_plane.worker.service_migrations import OWNED_SERVICE_KEYS
 
 
 def test_database_identity_is_opaque_stable_and_service_scoped() -> None:
     tenant_id = UUID("49e84243-f9e4-4981-b3a5-38f943cc79ba")
     catalogue = database_identity(tenant_id, "catalogue_fixture")
     inventory = database_identity(tenant_id, "inventory_fixture")
+    identity = database_identity(tenant_id, "identity_access")
 
     assert catalogue == database_identity(tenant_id, "catalogue_fixture")
     assert catalogue.database_name == inventory.database_name
     assert catalogue.schema_name != inventory.schema_name
+    assert identity.schema_name == "identity"
+    assert identity.database_name == catalogue.database_name
+    assert identity.runtime_role.endswith("_identity_rt")
+    assert identity.migrator_role.endswith("_identity_mg")
     assert "lifemac" not in catalogue.database_name
     assert max(map(len, catalogue.__dict__.values())) <= 63
 
@@ -25,6 +32,22 @@ def test_database_identity_is_opaque_stable_and_service_scoped() -> None:
 def test_database_identity_rejects_unknown_service() -> None:
     with pytest.raises(ValueError, match="unsupported service"):
         database_identity(uuid4(), "orders")
+
+
+def test_identity_access_is_a_supported_provisioning_contract() -> None:
+    request = ProvisioningRequest(service_key="identity_access")
+    assert request.service_key == "identity_access"
+    with pytest.raises(ValidationError):
+        ProvisioningRequest(service_key="identity-admin")  # type: ignore[arg-type]
+
+
+def test_tenant_service_migration_runner_covers_every_provisioned_schema() -> None:
+    assert set(OWNED_SERVICE_KEYS) == {
+        "catalogue_fixture",
+        "identity_access",
+        "inventory_fixture",
+        "media_fixture",
+    }
 
 
 def test_local_secret_is_idempotent_and_file_is_not_world_readable(tmp_path: Path) -> None:

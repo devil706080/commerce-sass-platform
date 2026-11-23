@@ -7,9 +7,16 @@ from platform_control_plane.schemas.domain import DomainCreate
 
 
 def test_domain_normalization_and_validation():
-    assert DomainCreate(hostname=" Store.Localhost. ").hostname == "store.localhost"
+    domain = DomainCreate(hostname=" Store.Localhost. ")
+    assert domain.hostname == "store.localhost"
+    assert domain.purpose == "STOREFRONT"
+    assert DomainCreate(hostname="admin.store.localhost", purpose="TENANT_ADMIN").purpose == (
+        "TENANT_ADMIN"
+    )
     with pytest.raises(ValidationError):
         DomainCreate(hostname="http://store.localhost:8000/path")
+    with pytest.raises(ValidationError):
+        DomainCreate(hostname="store.localhost", purpose="UNKNOWN")
 
 
 def test_domain_routes_fail_closed(monkeypatch):

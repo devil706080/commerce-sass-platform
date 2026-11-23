@@ -119,6 +119,64 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  identity-access:
+    profiles: ["identity-access"]
+    build:
+      context: ../../backend/services/identity-access
+    environment:
+      IDENTITY_TENANT_ID: ${IDENTITY_TENANT_ID:-}
+      IDENTITY_ALLOWED_HOSTS: ${IDENTITY_ALLOWED_HOSTS:-}
+      IDENTITY_DATABASE_NAME: ${IDENTITY_DATABASE_NAME:-}
+      IDENTITY_RUNTIME_ROLE: ${IDENTITY_RUNTIME_ROLE:-}
+      IDENTITY_MIGRATOR_ROLE: ${IDENTITY_MIGRATOR_ROLE:-}
+      IDENTITY_SECRET_FILE: /var/lib/identity-secrets/database.json
+      IDENTITY_DB_HOST: postgres
+      IDENTITY_DB_PORT: 5432
+      IDENTITY_SCHEMA: identity
+      IDENTITY_OIDC_ISSUER: http://localhost:8080/realms/platform-local
+      IDENTITY_OIDC_AUDIENCE: identity-api
+      IDENTITY_OIDC_JWKS_URL: http://keycloak:8080/realms/platform-local/protocol/openid-connect/certs
+      IDENTITY_CORS_ORIGINS: ${IDENTITY_CORS_ORIGINS:-[]}
+    ports:
+      - "127.0.0.1:8030:8030"
+    volumes:
+      - identity_secrets:/var/lib/identity-secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  identity-access-migrate:
+    profiles: ["identity-migration"]
+    build:
+      context: ../../backend/services/identity-access
+    command: ["python", "-m", "identity_access.infrastructure.migrate"]
+    environment:
+      IDENTITY_TENANT_ID: ${IDENTITY_TENANT_ID:-}
+      IDENTITY_ALLOWED_HOSTS: ${IDENTITY_ALLOWED_HOSTS:-}
+      IDENTITY_DATABASE_NAME: ${IDENTITY_DATABASE_NAME:-}
+      IDENTITY_RUNTIME_ROLE: ${IDENTITY_RUNTIME_ROLE:-}
+      IDENTITY_MIGRATOR_ROLE: ${IDENTITY_MIGRATOR_ROLE:-}
+      IDENTITY_SECRET_FILE: /var/lib/identity-secrets/database.json
+      IDENTITY_DB_HOST: postgres
+      IDENTITY_DB_PORT: 5432
+      IDENTITY_SCHEMA: identity
+      IDENTITY_OIDC_ISSUER: http://localhost:8080/realms/platform-local
+      IDENTITY_OIDC_AUDIENCE: identity-api
+      IDENTITY_OIDC_JWKS_URL: http://keycloak:8080/realms/platform-local/protocol/openid-connect/certs
+    volumes:
+      - identity_secrets:/var/lib/identity-secrets:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+
   catalogue:
     profiles: ["catalogue"]
     build:
@@ -307,4 +365,5 @@ volumes:
   redis_data:
   rabbitmq_data:
   provisioned_secrets:
+  identity_secrets:
   tenant_media:

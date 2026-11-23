@@ -37,20 +37,21 @@ def test_health_requires_no_database(configured):
         assert client.get("/health").json() == {"status": "ok"}
 
 
-def test_console_cors_allows_authenticated_delete(configured, monkeypatch):
+@pytest.mark.parametrize("method", ["DELETE", "PUT"])
+def test_console_cors_allows_authenticated_mutations(configured, monkeypatch, method):
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
     with TestClient(create_app()) as client:
         response = client.options(
             "/api/v1/tenants/00000000-0000-0000-0000-000000000001",
             headers={
                 "Origin": "http://localhost:3000",
-                "Access-Control-Request-Method": "DELETE",
+                "Access-Control-Request-Method": method,
                 "Access-Control-Request-Headers": "authorization",
             },
         )
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
-    assert "DELETE" in response.headers["access-control-allow-methods"]
+    assert method in response.headers["access-control-allow-methods"]
 
 
 def test_startup_requires_configuration(monkeypatch):

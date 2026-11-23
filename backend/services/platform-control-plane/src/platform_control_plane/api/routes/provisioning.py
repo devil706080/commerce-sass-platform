@@ -38,7 +38,8 @@ def _require_verified_domain(session: Session, tenant_id: UUID) -> None:
     verified: bool = session.execute(
         text(
             "SELECT EXISTS (SELECT 1 FROM tenant_domains "
-            "WHERE tenant_id = :tenant AND verification_status = 'VERIFIED')"
+            "WHERE tenant_id = :tenant AND purpose = 'STOREFRONT' "
+            "AND verification_status = 'VERIFIED')"
         ),
         {"tenant": tenant_id},
     ).scalar_one()
@@ -55,7 +56,7 @@ def request_provisioning(
     operator: Annotated[Operator, Depends(require_operator)],
 ) -> Any:
     tenant_status = _tenant_status(session, tenant_id)
-    if tenant_status not in {"PENDING", "PROVISIONING"}:
+    if tenant_status not in {"PENDING", "PROVISIONING", "ACTIVE"}:
         raise HTTPException(status_code=409, detail="Tenant cannot be provisioned")
     _require_verified_domain(session, tenant_id)
     job = (
@@ -127,7 +128,7 @@ def retry_provisioning(
     session: SessionDep,
     operator: Annotated[Operator, Depends(require_operator)],
 ) -> Any:
-    if _tenant_status(session, tenant_id) != "PROVISIONING":
+    if _tenant_status(session, tenant_id) not in {"PROVISIONING", "ACTIVE"}:
         raise HTTPException(status_code=409, detail="Tenant is not provisioning")
     job = (
         session.execute(

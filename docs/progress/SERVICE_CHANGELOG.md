@@ -47,3 +47,7 @@
 - Nested domain APIs normalize/register/list/verify only `localhost` and `*.localhost`; verification requires the environment allowlist and records operator audit events.
 - `/_local/tenant` now resolves only an allowlisted, database-verified domain to a non-deleting tenant; it remains explicitly non-authoritative for authorization.
 - Lifemac Pharma was created through the Keycloak-protected API and `lifemac.localhost` was verified without printing credentials or tokens.
+- `016_tenant_domain_purpose.py`: backfills legacy mappings as `STOREFRONT`, adds explicit
+  `STOREFRONT`/`TENANT_ADMIN` purposes and enforces one hostname per tenant/application purpose.
+  Local verification no longer depends on an environment-maintained hostname map, while global
+  hostname uniqueness and deletion-state denial remain enforced.

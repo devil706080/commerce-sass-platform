@@ -1,5 +1,39 @@
 # Test results
 
+## Central tenant branding and curated themes (2026-11-18)
+
+- Alembic revisions `012_tenant_branding` and `013_branding_privileges` were applied by the dedicated Control Plane migrator; `013_branding_privileges` is the verified head.
+- The existing Lifemac tenant was backfilled as `Lifemac Pharma`, initials `LP`, theme `ocean_teal`; the table contains one branding row.
+- Scoped Ruff lint and formatting checks passed. Strict MyPy passed for all 25 Control Plane source files.
+- Control Plane unit and security suites passed: 25 tests. A pre-existing Starlette/httpx deprecation warning remains.
+- A focused PostgreSQL integration test passed the transactional create/read/update flow and verified all five theme definitions and the Berry palette response.
+- Platform Console TypeScript checking and the optimized Next.js production build passed.
+- Compose configuration validation and image builds passed. Recreated Control Plane and Console containers are running; API and console returned HTTP 200.
+- OpenAPI exposes both theme/branding paths. Unauthenticated theme access returned 401.
+- Runtime privilege result was `(False, True, False, False, True)`: no table-wide UPDATE, theme-key UPDATE allowed, logo UPDATE denied, no table-wide INSERT, required tenant-id INSERT allowed.
+- An authenticated manual browser walkthrough of theme selection remains for the operator. Tenant Admin/Storefront theme consumption and logo upload were deliberately not included in this Control Plane-only slice.
+
+## Identity & Access provisioning boundary (2026-11-18)
+
+- Migration `014_identity_access` was applied through `platform_control_migrator`; Alembic reports it as head.
+- Ruff lint and scoped formatting passed. Strict MyPy passed across all 25 Control Plane source files.
+- Unit and security regression suites passed: 27 tests, with the existing Starlette/httpx deprecation warning.
+- A focused PostgreSQL integration test passed: an active tenant requested `identity_access`, received a pending job, and remained `ACTIVE`.
+- Tests verify deterministic `identity` schema/role names, shared opaque tenant-database placement, unknown-service rejection and exclusion from the legacy cross-service migration helper.
+- The real Lifemac `identity_access` infrastructure job reached `INFRASTRUCTURE_READY` after the
+  provisioner was corrected to avoid granting an ADMIN option back to its own grantor. No password
+  was displayed. The owning-service migration has not yet been verified against the dedicated
+  Identity secret volume.
+- Identity & Access Ruff passed, strict MyPy passed for 17 source files, and 8 unit/security tests
+  passed. Tests cover email normalization, first-owner bootstrap restrictions, missing/suspended
+  membership denial, invitation acceptance denial, normalized host allowlisting and OpenAPI Bearer
+  security documentation. One upstream Starlette/httpx deprecation warning remains.
+- Control Plane compatibility Ruff and strict MyPy passed; 27 unit/security tests passed with the
+  same upstream warning after supplying test-only environment values.
+- Keycloak realm JSON and Compose YAML syntax were validated. Docker image/container, PostgreSQL
+  migration/privilege and real browser login tests were not rerun because Docker CLI was not
+  available to the Codex process. They remain required before the UI integration gate.
+
 2026-11-16, Platform Control Plane Increment A:
 
 - `uv lock --check`: passed, 38 dependencies resolved.
@@ -100,3 +134,54 @@ Follow-up: migration `003_audit_actor` was applied with owner authorization via 
 - Backend scoped Ruff (excluding repository executable-bit/shebang noise) and strict MyPy passed in the built image.
 - Lifemac is intentionally still `PROVISIONING` until the authenticated activation endpoint is exercised; no premature activation was performed. A second-tenant isolation proof and the final human exit-gate walkthrough remain outstanding.
 - Follow-up verification: Lifemac is now `ACTIVE`, with a `TENANT_ACTIVATED` audit event. The authenticated activation flow completed successfully after both service readiness rows were `MIGRATED`/`PASSED`.
+
+## Initial tenant-owner contact (2026-11-19)
+
+- Added migration `015_owner_contact`; the full Alembic chain rendered successfully offline.
+- Ruff check passed, Ruff format check passed, and strict MyPy passed for 25 source files.
+- 32 Control Plane unit/security tests passed. New tests cover standards-based email validation,
+  whitespace/case normalization and invalid email denial. One upstream Starlette/httpx deprecation
+  warning remains.
+- Migration `015_owner_contact` was applied with the dedicated migrator and is the verified head.
+  The column is nullable for existing-data safety. Runtime has no table-wide INSERT, but has scoped
+  INSERT and UPDATE on `initial_owner_email`; one existing tenant currently lacks a contact.
+- The complete Control Plane suite passed against local PostgreSQL: 37 tests. Integration writes
+  ran in rolled-back transactions. The existing Starlette/httpx deprecation warning remains.
+- Platform Console strict TypeScript checking and the optimized Next.js 16.4.6 production build
+  passed inside Docker; static `/` generation completed.
+- Control Plane and Platform Console images rebuilt and containers were recreated. API health and
+  readiness returned `ok`; console returned HTTP 200; both published ports are loopback-only.
+- OpenAPI exposes the owner-contact endpoint and requires `initial_owner_email` for tenant creation.
+  Unauthenticated tenant access returned 401, and the authenticated-origin PUT CORS preflight
+  returned 200 with `GET, POST, PUT, DELETE`.
+- In-app browser automation was unavailable, so the final Keycloak login/modal walkthrough remains
+  a manual operator check. No project-owned dangling image remained after the rebuild.
+
+## Platform Console local-domain workflow (2026-11-19)
+
+- Added an operator UI for selecting a tenant, registering a `localhost` hostname, listing its
+  persisted domain records and invoking the existing deterministic local verification endpoint.
+- Domain verification remains fail-closed: a hostname absent from `LOCAL_TENANT_LABELS` returns the
+  backend error and is not shown as verified. Domain writes remain restricted to pending tenants.
+- Direct strict TypeScript checking passed. The Docker production build then passed its own
+  TypeScript check, Next.js optimized compilation and static page generation.
+- The Platform Console image was rebuilt and its container recreated. Console HTTP returned 200;
+  Control Plane health/readiness returned `ok`; ports 3000 and 8000 remained loopback-only.
+- Authenticated visual interaction still requires the operator's manual Keycloak session because an
+  in-app browser automation facility was unavailable in this execution environment.
+
+## Tenant application-domain contract (2026-11-19)
+
+- Migration `016_domain_purpose` was rendered offline, preflighted against existing rows, applied
+  with the dedicated migrator and verified as the database head. Existing
+  `lifemac.localhost` remains `STOREFRONT` and `VERIFIED`.
+- Domain records now distinguish Storefront from Tenant Admin. Hostnames remain globally unique,
+  and each tenant may own at most one hostname for each purpose.
+- Local `*.localhost` verification is database-backed and no longer requires
+  `LOCAL_TENANT_LABELS`. Active tenants can add a missing Tenant Admin hostname; tenants awaiting
+  deletion cannot change domains.
+- Ruff (excluding the repository's known Windows executable-bit noise), Ruff formatting, strict
+  MyPy, offline Alembic rendering and the full PostgreSQL suite passed. Test result: 37 passed with
+  one upstream Starlette/httpx deprecation warning.
+- The Control Plane image was rebuilt and recreated. Health/readiness returned `ok`; OpenAPI
+  includes the domain purpose contract; unauthenticated domain access returned 401.

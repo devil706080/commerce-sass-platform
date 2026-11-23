@@ -15,7 +15,7 @@ router = APIRouter(
 )
 SessionDep = Annotated[Session, Depends(get_session)]
 _FIELDS = (
-    "id, tenant_id, hostname, verification_status, verification_method, "
+    "id, tenant_id, hostname, purpose, verification_status, verification_method, "
     "verified_at, created_at, updated_at"
 )
 
@@ -34,8 +34,8 @@ def _tenant_status(session: Session, tenant_id: UUID) -> str:
     return str(status_value)
 
 
-def _require_onboardable_tenant(session: Session, tenant_id: UUID) -> None:
-    if _tenant_status(session, tenant_id) != "PENDING":
+def _require_manageable_tenant(session: Session, tenant_id: UUID) -> None:
+    if _tenant_status(session, tenant_id) == "DELETION_REQUESTED":
         raise HTTPException(status_code=409, detail="Tenant cannot accept domain changes")
 
 
@@ -51,33 +51,58 @@ def register_domain(
     _require_local_adapter(request)
     if payload.hostname != "localhost" and not payload.hostname.endswith(".localhost"):
         raise HTTPException(status_code=422, detail="Local domains must use localhost")
-    _require_onboardable_tenant(session, tenant_id)
+    _require_manageable_tenant(session, tenant_id)
+    existing = (
+        session.execute(
+            text(f"SELECT {_FIELDS} FROM tenant_domains WHERE hostname = :hostname"),
+            {"hostname": payload.hostname},
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if existing is not None:
+        if existing.tenant_id != tenant_id:
+            raise HTTPException(status_code=409, detail="Domain is already registered")
+        if existing.purpose != payload.purpose:
+            raise HTTPException(status_code=409, detail="Domain is registered for another purpose")
+        response.status_code = status.HTTP_200_OK
+        return existing
+    purpose_domain = (
+        session.execute(
+            text(
+                f"SELECT {_FIELDS} FROM tenant_domains "
+                "WHERE tenant_id = :tenant AND purpose = :purpose"
+            ),
+            {"tenant": tenant_id, "purpose": payload.purpose},
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if purpose_domain is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Tenant already has a {payload.purpose.lower()} domain",
+        )
     domain_id = uuid4()
     domain = (
         session.execute(
             text(
-                "INSERT INTO tenant_domains (id, tenant_id, hostname) "
-                "VALUES (:id, :tenant, :hostname) "
-                f"ON CONFLICT (hostname) DO NOTHING RETURNING {_FIELDS}"
+                "INSERT INTO tenant_domains (id, tenant_id, hostname, purpose) "
+                "VALUES (:id, :tenant, :hostname, :purpose) "
+                f"ON CONFLICT DO NOTHING RETURNING {_FIELDS}"
             ),
-            {"id": domain_id, "tenant": tenant_id, "hostname": payload.hostname},
+            {
+                "id": domain_id,
+                "tenant": tenant_id,
+                "hostname": payload.hostname,
+                "purpose": payload.purpose,
+            },
         )
         .mappings()
         .one_or_none()
     )
     if domain is None:
-        existing = (
-            session.execute(
-                text(f"SELECT {_FIELDS} FROM tenant_domains WHERE hostname = :hostname"),
-                {"hostname": payload.hostname},
-            )
-            .mappings()
-            .one()
-        )
-        if existing.tenant_id != tenant_id:
-            raise HTTPException(status_code=409, detail="Domain is already registered")
-        response.status_code = status.HTTP_200_OK
-        return existing
+        raise HTTPException(status_code=409, detail="Domain registration conflict")
     session.execute(
         text(
             "INSERT INTO tenant_audit_events (id, tenant_id, action, actor_issuer, actor_subject) "
@@ -124,7 +149,7 @@ def verify_domain(
     operator: Annotated[Operator, Depends(require_operator)],
 ) -> Any:
     _require_local_adapter(request)
-    _require_onboardable_tenant(session, tenant_id)
+    _require_manageable_tenant(session, tenant_id)
     domain = (
         session.execute(
             text(
@@ -140,8 +165,6 @@ def verify_domain(
         raise HTTPException(status_code=404, detail="Domain not found")
     if domain.verification_status == "VERIFIED":
         return domain
-    if domain.hostname not in request.app.state.settings.local_labels():
-        raise HTTPException(status_code=409, detail="Local hostname is not configured")
     verified = (
         session.execute(
             text(

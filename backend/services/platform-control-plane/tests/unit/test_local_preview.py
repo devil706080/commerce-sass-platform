@@ -7,20 +7,25 @@ from platform_control_plane.dependencies.database import get_session
 from platform_control_plane.main import create_app
 
 
-def test_local_preview_is_environment_configured(monkeypatch):
+def test_local_preview_uses_verified_database_mapping(monkeypatch):
     monkeypatch.setenv("DB_HOST", "127.0.0.1")
     monkeypatch.setenv("PLATFORM_CONTROL_RUNTIME_PASSWORD", "test")
     monkeypatch.setenv("APP_ENVIRONMENT", "local")
-    monkeypatch.setenv("LOCAL_TENANT_LABELS", '{"localhost":"Example Store"}')
 
     class Result:
+        def __init__(self, hostname):
+            self.hostname = hostname
+
         def mappings(self):
             return self
 
         def one_or_none(self):
+            if self.hostname != "localhost":
+                return None
             return {
                 "tenant_id": "00000000-0000-0000-0000-000000000001",
                 "hostname": "localhost",
+                "purpose": "STOREFRONT",
                 "display_name": "Example Store",
                 "tenant_status": "PENDING",
                 "domain_status": "VERIFIED",
@@ -28,7 +33,7 @@ def test_local_preview_is_environment_configured(monkeypatch):
 
     class Session:
         def execute(self, statement, parameters):
-            return Result()
+            return Result(parameters["hostname"])
 
     app = create_app()
     app.dependency_overrides[get_session] = lambda: Session()
@@ -36,6 +41,7 @@ def test_local_preview_is_environment_configured(monkeypatch):
         preview = client.get("/_local/tenant").json()
         assert preview["display_name"] == "Example Store"
         assert preview["domain_status"] == "VERIFIED"
+        assert preview["purpose"] == "STOREFRONT"
         assert (
             client.get("/_local/tenant", headers={"Host": "unknown.localhost"}).status_code == 404
         )

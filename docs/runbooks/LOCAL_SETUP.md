@@ -62,6 +62,9 @@ Record date, Docker/Compose versions, command output, role checks and any port c
 | Provisioning migration | Alembic `006_provisioning_jobs` applied by `platform_control_migrator` | 2026-11-17 |
 | Lifemac fixture databases | Catalogue and Inventory migrations reached `MIGRATED`/`PASSED`; Lifemac was activated through the authenticated console | 2026-11-17 |
 | Tenant/service isolation | Catalogue runtime was denied connection to Inventory; PUBLIC CONNECT and TEMPORARY are revoked | 2026-11-17 |
+| Provisioner role repair | Repaired idempotent tenant-owner `SET ROLE` handling; LLPPharma Identity, Catalogue, Inventory and Media infrastructure jobs reached `INFRASTRUCTURE_READY` | 2026-11-23 |
+| LLPPharma tenant migrations | Identity, Catalogue, Inventory and Media schemas migrated and their readiness smoke checks passed | 2026-11-23 |
+| Control-plane regression tests | PostgreSQL-backed control-plane suite passed: 37 tests; one upstream Starlette/httpx deprecation warning | 2026-11-23 |
 
 ## Local provisioning worker
 
@@ -77,7 +80,15 @@ Schema changes remain an explicit operation. Run the reviewed control-plane migr
 docker compose --env-file .env -f .\infra\local\compose.yaml --profile migration run --rm --build platform-control-migrate
 ```
 
-The worker creates infrastructure only. It does not run Catalogue, Inventory, or any other owning-service migration. Local generated service credentials are held in the `provisioned_secrets` Docker volume; the control database stores only `local-volume://...` references.
+The provisioning worker creates infrastructure only. Apply reviewed tenant-service migrations through the dedicated `platform-service-migrate` job; it migrates the Identity, Catalogue, Inventory, and Media schemas using their generated tenant migrator roles, then records the migration and smoke-check status. Local generated service credentials are held in the `provisioned_secrets` Docker volume; the control database stores only `local-volume://...` references.
+
+If a historical local run shows `PROVISIONING_FAILED` with no schema records, rebuild the provisioning worker before retrying the job. The worker temporarily receives only the PostgreSQL `SET ROLE` capability needed to create the generated tenant database and schema, then revokes that membership and its tenant-database connection immediately afterwards. Do not replace this with a bootstrap-administrator application connection.
+
+Run the tenant-service migration job only after reviewing and approving schema changes:
+
+```powershell
+docker compose --env-file .env -f .\infra\local\compose.yaml --profile service-migration run --rm --build platform-service-migrate
+```
 
 PowerShell sessions with Docker's user installation may need a fresh PATH. Because the Compose file is in `infra/local`, use `docker compose --env-file .env -f .\infra\local\compose.yaml` from the repository root. The control-plane local exit gate is complete; production identity hardening, external domain verification, backups, and monitoring remain future work.
 

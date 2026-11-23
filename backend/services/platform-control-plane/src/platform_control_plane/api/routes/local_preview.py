@@ -12,6 +12,7 @@ from platform_control_plane.dependencies.database import get_session
 class LocalPreview(BaseModel):
     tenant_id: UUID
     hostname: str
+    purpose: Literal["STOREFRONT", "TENANT_ADMIN"]
     display_name: str
     tenant_status: Literal["PENDING", "PROVISIONING", "ACTIVE"]
     domain_status: Literal["VERIFIED"]
@@ -31,13 +32,11 @@ def local_preview(
         raise HTTPException(status_code=404, detail="Not found")
     forwarded = request.headers.get("x-forwarded-host", "").split(",", 1)[0].strip()
     hostname = forwarded.split(":", 1)[0].lower() if forwarded else request.url.hostname
-    if (hostname or "") not in settings.local_labels():
-        raise HTTPException(status_code=404, detail="Local tenant preview not configured")
     tenant = (
         session.execute(
             text(
                 "SELECT t.id AS tenant_id, t.display_name, t.status AS tenant_status, "
-                "d.hostname, d.verification_status AS domain_status "
+                "d.hostname, d.purpose, d.verification_status AS domain_status "
                 "FROM tenant_domains d JOIN tenants t ON t.id = d.tenant_id "
                 "WHERE d.hostname = :hostname AND d.verification_status = 'VERIFIED' "
                 "AND t.status IN ('PENDING', 'PROVISIONING', 'ACTIVE')"

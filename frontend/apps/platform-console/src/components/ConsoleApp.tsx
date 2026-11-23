@@ -7,6 +7,7 @@ type TenantStatus = "PENDING" | "PROVISIONING" | "ACTIVE" | "FAILED" | "DELETION
 type Tenant = {
   id: string;
   display_name: string;
+  initial_owner_email: string | null;
   status: TenantStatus;
   created_at: string;
   updated_at: string;
@@ -14,6 +15,25 @@ type Tenant = {
 type Notice = { tone: "success" | "error" | "info"; message: string } | null;
 type ProvisioningJob = { id: string; tenant_id: string; service_key: string; status: "PENDING" | "RUNNING" | "INFRASTRUCTURE_READY" | "FAILED"; attempt_count: number; error_code: string | null; };
 type ServiceDatabase = { service_key: string; database_name: string; schema_name: string | null; status: string; };
+type ThemeOption = { key: string; name: string; primary: string; primary_dark: string; accent: string; surface: string };
+type TenantDomain = {
+  id: string;
+  tenant_id: string;
+  hostname: string;
+  purpose: "STOREFRONT" | "TENANT_ADMIN";
+  verification_status: "PENDING_VERIFICATION" | "VERIFIED";
+  verification_method: "LOCAL";
+  verified_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+const servicePresentation: Record<string, { name: string; description: string }> = {
+  identity_access: { name: "Identity & Access", description: "Tenant owner and staff memberships" },
+  catalogue_fixture: { name: "Catalogue", description: "Products and categories" },
+  inventory_fixture: { name: "Inventory", description: "Stock and availability" },
+  media_fixture: { name: "Media", description: "Secure product image storage" },
+};
 
 const keycloak = new Keycloak({
   url: process.env.NEXT_PUBLIC_KEYCLOAK_URL!,
@@ -63,28 +83,56 @@ export default function ConsoleApp() {
   const [creating, setCreating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [name, setName] = useState("");
+  const [ownerEmail, setOwnerEmail] = useState("");
+  const [brandName, setBrandName] = useState("");
+  const [initials, setInitials] = useState("");
+  const [themeKey, setThemeKey] = useState("ocean_teal");
+  const [themes, setThemes] = useState<ThemeOption[]>([]);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"ALL" | TenantStatus>("ALL");
   const [createOpen, setCreateOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Tenant | null>(null);
   const [provisionTarget, setProvisionTarget] = useState<Tenant | null>(null);
-  const [provisionServices, setProvisionServices] = useState<string[]>(["catalogue_fixture", "inventory_fixture", "media_fixture"]);
+  const [brandingTarget, setBrandingTarget] = useState<Tenant | null>(null);
+  const [brandingSaving, setBrandingSaving] = useState(false);
+  const [contactTarget, setContactTarget] = useState<Tenant | null>(null);
+  const [contactEmail, setContactEmail] = useState("");
+  const [contactSaving, setContactSaving] = useState(false);
+  const [provisionServices, setProvisionServices] = useState<string[]>(["identity_access", "catalogue_fixture", "inventory_fixture", "media_fixture"]);
   const [provisioning, setProvisioning] = useState(false);
   const [confirmName, setConfirmName] = useState("");
   const [notice, setNotice] = useState<Notice>(null);
-  const [view, setView] = useState<"tenants" | "provisioning">("tenants");
+  const [view, setView] = useState<"tenants" | "provisioning" | "domains">("tenants");
   const [jobs, setJobs] = useState<ProvisioningJob[]>([]);
   const [serviceDatabases, setServiceDatabases] = useState<ServiceDatabase[]>([]);
   const [selectedProvisionTenant, setSelectedProvisionTenant] = useState<string | null>(null);
+  const [selectedDomainTenant, setSelectedDomainTenant] = useState<string | null>(null);
+  const [domains, setDomains] = useState<TenantDomain[]>([]);
+  const [domainHostname, setDomainHostname] = useState("");
+  const [domainPurpose, setDomainPurpose] = useState<"STOREFRONT" | "TENANT_ADMIN">("STOREFRONT");
+  const [domainLoading, setDomainLoading] = useState(false);
+  const [domainSaving, setDomainSaving] = useState(false);
 
   const operatorName = String(keycloak.tokenParsed?.preferred_username ?? keycloak.tokenParsed?.email ?? "Platform operator");
 
   async function request(path: string, init?: RequestInit) {
-    await keycloak.updateToken(30);
+    try {
+      await keycloak.updateToken(30);
+    } catch {
+      keycloak.clearToken();
+      setAuthenticated(false);
+      throw new Error("Your session expired. Sign in again to continue.");
+    }
     const headers = new Headers(init?.headers);
     headers.set("Authorization", `Bearer ${keycloak.token}`);
     if (init?.body) headers.set("Content-Type", "application/json");
-    return fetch(`${api}${path}`, { ...init, headers });
+    const response = await fetch(`${api}${path}`, { ...init, headers });
+    if (response.status === 401) {
+      keycloak.clearToken();
+      setAuthenticated(false);
+      throw new Error("Your session expired. Sign in again to continue.");
+    }
+    return response;
   }
 
   async function loadTenants(showConfirmation = false) {
@@ -101,6 +149,12 @@ export default function ConsoleApp() {
     }
   }
 
+  async function loadThemes() {
+    const response = await request("/api/v1/themes");
+    if (!response.ok) throw new Error("Unable to load tenant themes");
+    setThemes(await response.json());
+  }
+
   async function loadProvisioning(tenantId?: string) {
     const target = tenantId ?? selectedProvisionTenant ?? tenants[0]?.id;
     if (!target) return;
@@ -115,6 +169,70 @@ export default function ConsoleApp() {
       setServiceDatabases(await databasesResponse.json());
     } catch (error) {
       setNotice({ tone: "error", message: error instanceof Error ? error.message : "Unable to load provisioning state" });
+    }
+  }
+
+  async function loadDomains(tenantId?: string) {
+    const target = tenantId ?? selectedDomainTenant ?? tenants[0]?.id;
+    if (!target) {
+      setDomains([]);
+      return;
+    }
+    setSelectedDomainTenant(target);
+    setDomainLoading(true);
+    try {
+      const response = await request(`/api/v1/tenants/${target}/domains`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail ?? "Unable to load tenant domains");
+      setDomains(body);
+    } catch (error) {
+      setDomains([]);
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Unable to load tenant domains" });
+    } finally {
+      setDomainLoading(false);
+    }
+  }
+
+  function openDomains(tenant: Tenant) {
+    setView("domains");
+    setDomainHostname("");
+    setDomainPurpose("STOREFRONT");
+    void loadDomains(tenant.id);
+  }
+
+  async function registerDomain(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedDomainTenant) return;
+    setDomainSaving(true);
+    try {
+      const response = await request(`/api/v1/tenants/${selectedDomainTenant}/domains`, {
+        method: "POST",
+        body: JSON.stringify({ hostname: domainHostname, purpose: domainPurpose }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail ?? "Unable to register hostname");
+      setDomainHostname("");
+      setNotice({ tone: "success", message: `${body.hostname} was registered for ${domainPurpose === "STOREFRONT" ? "the storefront" : "Tenant Admin"}` });
+      await loadDomains(selectedDomainTenant);
+    } catch (error) {
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Unable to register hostname" });
+    } finally {
+      setDomainSaving(false);
+    }
+  }
+
+  async function verifyDomain(domain: TenantDomain) {
+    setDomainSaving(true);
+    try {
+      const response = await request(`/api/v1/tenants/${domain.tenant_id}/domains/${domain.id}/verify`, { method: "POST" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail ?? "Unable to verify hostname");
+      setNotice({ tone: "success", message: `${body.hostname} is verified for local routing` });
+      await loadDomains(domain.tenant_id);
+    } catch (error) {
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Unable to verify hostname" });
+    } finally {
+      setDomainSaving(false);
     }
   }
 
@@ -148,7 +266,7 @@ export default function ConsoleApp() {
       .then(async (ok) => {
         setAuthenticated(ok);
         setAuthReady(true);
-        if (ok) await loadTenants();
+        if (ok) await Promise.all([loadTenants(), loadThemes()]);
       })
       .catch(() => {
         setAuthReady(true);
@@ -175,11 +293,12 @@ export default function ConsoleApp() {
       const response = await request("/api/v1/tenants", {
         method: "POST",
         headers: { "Idempotency-Key": crypto.randomUUID() },
-        body: JSON.stringify({ display_name: name }),
+        body: JSON.stringify({ display_name: name, initial_owner_email: ownerEmail, storefront_display_name: brandName || name, fallback_initials: initials || null, theme_key: themeKey }),
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.detail ?? "Unable to create tenant");
       setName("");
+      setOwnerEmail(""); setBrandName(""); setInitials(""); setThemeKey("ocean_teal");
       setCreateOpen(false);
       setNotice({ tone: "success", message: `${body.display_name} was added to the registry` });
       await loadTenants();
@@ -187,6 +306,51 @@ export default function ConsoleApp() {
       setNotice({ tone: "error", message: error instanceof Error ? error.message : "Unable to create tenant" });
     } finally {
       setCreating(false);
+    }
+  }
+
+  async function openBranding(tenant: Tenant) {
+    try {
+      const response = await request(`/api/v1/tenants/${tenant.id}/branding`);
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail ?? "Unable to load branding");
+      setBrandName(body.display_name); setInitials(body.fallback_initials); setThemeKey(body.theme_key); setBrandingTarget(tenant);
+    } catch (error) { setNotice({ tone: "error", message: error instanceof Error ? error.message : "Unable to load branding" }); }
+  }
+
+  async function saveBranding(event: FormEvent) {
+    event.preventDefault(); if (!brandingTarget) return; setBrandingSaving(true);
+    try {
+      const response = await request(`/api/v1/tenants/${brandingTarget.id}/branding`, { method: "PUT", body: JSON.stringify({ display_name: brandName, fallback_initials: initials || null, theme_key: themeKey }) });
+      const body = await response.json(); if (!response.ok) throw new Error(body.detail ?? "Unable to update branding");
+      setBrandingTarget(null); setNotice({ tone: "success", message: `${body.display_name} branding was updated` });
+    } catch (error) { setNotice({ tone: "error", message: error instanceof Error ? error.message : "Unable to update branding" }); }
+    finally { setBrandingSaving(false); }
+  }
+
+  function openOwnerContact(tenant: Tenant) {
+    setContactTarget(tenant);
+    setContactEmail(tenant.initial_owner_email ?? "");
+  }
+
+  async function saveOwnerContact(event: FormEvent) {
+    event.preventDefault();
+    if (!contactTarget) return;
+    setContactSaving(true);
+    try {
+      const response = await request(`/api/v1/tenants/${contactTarget.id}/owner-contact`, {
+        method: "PUT",
+        body: JSON.stringify({ initial_owner_email: contactEmail }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.detail ?? "Unable to update owner contact");
+      setContactTarget(null);
+      setNotice({ tone: "success", message: `Initial administrator updated for ${body.display_name}` });
+      await loadTenants();
+    } catch (error) {
+      setNotice({ tone: "error", message: error instanceof Error ? error.message : "Unable to update owner contact" });
+    } finally {
+      setContactSaving(false);
     }
   }
 
@@ -266,7 +430,7 @@ export default function ConsoleApp() {
         <p className="nav-label">Workspace</p>
         <button className={`nav-item ${view === "tenants" ? "active" : ""}`} onClick={() => setView("tenants")}><Icon name="tenants"/><span>Tenants</span></button>
         <button className={`nav-item ${view === "provisioning" ? "active" : ""}`} onClick={() => { setView("provisioning"); void loadProvisioning(); }}><Icon name="grid"/><span>Provisioning</span></button>
-        <button className="nav-item" disabled><Icon name="domain"/><span>Domains</span><em>Soon</em></button>
+        <button className={`nav-item ${view === "domains" ? "active" : ""}`} onClick={() => { setView("domains"); void loadDomains(); }}><Icon name="domain"/><span>Domains</span></button>
       </nav>
       <div className="sidebar-user">
         <span className="user-avatar">{operatorName.slice(0, 1).toUpperCase()}</span>
@@ -279,7 +443,7 @@ export default function ConsoleApp() {
       {view === "tenants" ? <header className="page-header">
         <div><p className="overline">Control plane</p><h1>Tenant registry</h1><p>Manage businesses and track their onboarding lifecycle.</p></div>
         <button className="primary-button" onClick={() => setCreateOpen(true)}><Icon name="plus"/>New tenant</button>
-      </header> : <header className="page-header"><div><p className="overline">Control plane</p><h1>Provisioning</h1><p>Track tenant database, schema, migration and smoke-check readiness.</p></div><button className="secondary-button" onClick={() => void loadProvisioning(selectedProvisionTenant ?? undefined)}><Icon name="refresh"/>Refresh</button></header>}
+      </header> : view === "provisioning" ? <header className="page-header"><div><p className="overline">Control plane</p><h1>Provisioning</h1><p>Track tenant database, schema, migration and smoke-check readiness.</p></div><button className="secondary-button" onClick={() => void loadProvisioning(selectedProvisionTenant ?? undefined)}><Icon name="refresh"/>Refresh</button></header> : <header className="page-header"><div><p className="overline">Tenant routing</p><h1>Local domains</h1><p>Register and verify the hostname that resolves each tenant on this development machine.</p></div><button className="secondary-button" onClick={() => void loadDomains(selectedDomainTenant ?? undefined)} disabled={domainLoading}><Icon name="refresh"/>Refresh</button></header>}
 
       {notice && <div className={`notice ${notice.tone}`} role="status"><span>{notice.message}</span><button aria-label="Dismiss notification" onClick={() => setNotice(null)}><Icon name="close" size={16}/></button></div>}
 
@@ -291,8 +455,20 @@ export default function ConsoleApp() {
 
       {view === "provisioning" && <section className="registry-card provisioning-dashboard">
         <div className="registry-toolbar"><label className="tenant-selector">Tenant<select value={selectedProvisionTenant ?? ""} onChange={(event) => void loadProvisioning(event.target.value)}><option value="" disabled>Select tenant</option>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.display_name}</option>)}</select></label></div>
-        <div className="provisioning-summary"><strong>{tenants.find((tenant) => tenant.id === selectedProvisionTenant)?.display_name ?? "Select a tenant"}</strong><span>{serviceDatabases.length} schema records</span>{selectedProvisionTenant && tenants.find((tenant) => tenant.id === selectedProvisionTenant)?.status === "PROVISIONING" && <button className="primary-button compact" onClick={() => void activateTenant()}>Activate when ready</button>}</div>
-        <div className="job-list">{jobs.map((job) => <article className="job-card" key={job.id}><div><strong>{job.service_key === "catalogue_fixture" ? "Catalogue" : job.service_key === "inventory_fixture" ? "Inventory" : "Media"}</strong><small>Attempt {job.attempt_count}</small></div><StatusPill status={job.status === "INFRASTRUCTURE_READY" ? "PROVISIONING" : job.status === "FAILED" ? "FAILED" : "PROVISIONING"}/><span className="job-state">{job.status === "INFRASTRUCTURE_READY" ? serviceDatabases.find((item) => item.service_key === job.service_key)?.schema_name ?? "Schema ready" : job.error_code ?? job.status}</span>{job.status === "FAILED" && <button className="secondary-button compact" onClick={() => void retryJob(job)}>Retry</button>}</article>)}{jobs.length === 0 && <div className="empty-state"><h3>No provisioning jobs</h3><p>Select a tenant and start provisioning from the Tenants view.</p></div>}</div>
+        <div className="provisioning-summary"><strong>{tenants.find((tenant) => tenant.id === selectedProvisionTenant)?.display_name ?? "Select a tenant"}</strong><span>{serviceDatabases.length} schema records</span>{selectedProvisionTenant && tenants.find((tenant) => tenant.id === selectedProvisionTenant)?.status === "PROVISIONING" && <button className="primary-button compact" title={jobs.every((job) => job.status === "INFRASTRUCTURE_READY") ? "Check activation readiness" : "Wait for every provisioning job to complete"} disabled={!jobs.length || !jobs.every((job) => job.status === "INFRASTRUCTURE_READY")} onClick={() => void activateTenant()}>Activate when ready</button>}</div>
+        <div className="job-list">{jobs.map((job) => <article className="job-card" key={job.id}><div><strong>{servicePresentation[job.service_key]?.name ?? job.service_key}</strong><small>Attempt {job.attempt_count}</small></div><StatusPill status={job.status === "INFRASTRUCTURE_READY" ? "PROVISIONING" : job.status === "FAILED" ? "FAILED" : "PROVISIONING"}/><span className="job-state">{job.status === "INFRASTRUCTURE_READY" ? serviceDatabases.find((item) => item.service_key === job.service_key)?.schema_name ?? "Schema ready" : job.error_code ?? job.status}</span>{job.status === "FAILED" && <button className="secondary-button compact" onClick={() => void retryJob(job)}>Retry</button>}</article>)}{jobs.length === 0 && <div className="empty-state"><h3>No provisioning jobs</h3><p>Select a tenant and start provisioning from the Tenants view.</p></div>}</div>
+      </section>}
+
+      {view === "domains" && <section className="registry-card domain-dashboard">
+        <div className="registry-toolbar domain-toolbar">
+          <label className="tenant-selector">Tenant<select value={selectedDomainTenant ?? ""} onChange={(event) => { setDomainHostname(""); void loadDomains(event.target.value); }}><option value="" disabled>Select tenant</option>{tenants.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.display_name}</option>)}</select></label>
+          <span className="environment-badge">Local adapter</span>
+        </div>
+        {selectedDomainTenant ? <>
+          <div className="domain-intro"><div><strong>{tenants.find((tenant) => tenant.id === selectedDomainTenant)?.display_name}</strong><p>Register one hostname for the customer storefront and one for the tenant administration portal. Local <code>*.localhost</code> hostnames verify without editing environment configuration.</p></div><span>{domains.filter((domain) => domain.verification_status === "VERIFIED").length} verified</span></div>
+          <form className="domain-form" onSubmit={registerDomain}><label htmlFor="domain-purpose">Application</label><select id="domain-purpose" value={domainPurpose} onChange={(event) => setDomainPurpose(event.target.value as "STOREFRONT" | "TENANT_ADMIN")}><option value="STOREFRONT">Customer storefront</option><option value="TENANT_ADMIN">Tenant Admin</option></select><label htmlFor="domain-hostname">Local hostname</label><div><input id="domain-hostname" value={domainHostname} onChange={(event) => setDomainHostname(event.target.value.toLowerCase())} placeholder={domainPurpose === "STOREFRONT" ? "lifemac.localhost" : "admin.lifemac.localhost"} required pattern="(?:localhost|[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.localhost)"/><button className="primary-button" disabled={domainSaving || tenants.find((tenant) => tenant.id === selectedDomainTenant)?.status === "DELETION_REQUESTED"}><Icon name="plus"/>Register</button></div><small>Enter only a local hostname—without http:// or a port. A tenant can have one verified hostname for each application.</small></form>
+          <div className="domain-list">{domainLoading ? <div className="domain-loading">Loading domains...</div> : domains.map((domain) => <article className="domain-card" key={domain.id}><span className={`domain-state ${domain.verification_status === "VERIFIED" ? "verified" : "pending"}`}><Icon name={domain.verification_status === "VERIFIED" ? "shield" : "domain"}/></span><div><strong>{domain.hostname}</strong><small>{domain.purpose === "STOREFRONT" ? "Customer storefront" : "Tenant Admin"} · {domain.verification_method} verification · {domain.verification_status === "VERIFIED" ? `Verified ${new Intl.DateTimeFormat("en", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(domain.verified_at!))}` : "Awaiting verification"}</small></div><span className={`verification-pill ${domain.verification_status === "VERIFIED" ? "verified" : "pending"}`}>{domain.verification_status === "VERIFIED" ? "Verified" : "Pending"}</span>{domain.verification_status !== "VERIFIED" && <button className="secondary-button compact" type="button" disabled={domainSaving} onClick={() => void verifyDomain(domain)}>Verify</button>}</article>)}{domains.length === 0 && <div className="empty-state compact-empty"><span><Icon name="domain" size={24}/></span><h3>No hostname registered</h3><p>Register the storefront hostname before starting provisioning.</p></div>}</div>
+        </> : <div className="empty-state"><span><Icon name="domain" size={24}/></span><h3>Select a tenant</h3><p>Choose a tenant to manage its local routing hostname.</p></div>}
       </section>}
 
       {view === "tenants" && <section className="registry-card">
@@ -312,11 +488,11 @@ export default function ConsoleApp() {
             <thead><tr><th>Tenant</th><th>Status</th><th>Created</th><th>Tenant ID</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
               {loading && tenants.length === 0 ? Array.from({ length: 3 }).map((_, index) => <tr className="skeleton-row" key={index}><td><span/></td><td><span/></td><td><span/></td><td><span/></td><td/></tr>) : visibleTenants.map((tenant) => <tr key={tenant.id}>
-                <td data-label="Tenant"><div className="tenant-cell"><span className="tenant-logo">{tenant.display_name.slice(0, 2).toUpperCase()}</span><div><strong>{tenant.display_name}</strong><small>Commerce tenant</small></div></div></td>
+                <td data-label="Tenant"><div className="tenant-cell"><span className="tenant-logo">{tenant.display_name.slice(0, 2).toUpperCase()}</span><div><strong>{tenant.display_name}</strong><small className={tenant.initial_owner_email ? "" : "owner-missing"}>{tenant.initial_owner_email ?? "Initial administrator required"}</small></div></div></td>
                 <td data-label="Status"><StatusPill status={tenant.status}/></td>
                 <td data-label="Created"><span className="date-value">{new Intl.DateTimeFormat("en", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(tenant.created_at))}</span></td>
                 <td data-label="Tenant ID"><button className="copy-id" title="Copy tenant ID" onClick={() => { void navigator.clipboard.writeText(tenant.id); setNotice({ tone: "info", message: "Tenant ID copied" }); }}><code>{tenant.id.slice(0, 8)}...{tenant.id.slice(-4)}</code><Icon name="copy" size={14}/></button></td>
-                <td className="actions"><button className="secondary-button compact" disabled={tenant.status !== "PENDING"} title="Start tenant provisioning" onClick={() => setProvisionTarget(tenant)}><Icon name="grid" size={15}/><span>Provision</span></button><button className="danger-action" disabled={tenant.status !== "PENDING"} title={tenant.status === "PENDING" ? "Request tenant deletion" : tenant.status === "DELETION_REQUESTED" ? "Deletion already requested" : "Unavailable during tenant setup"} onClick={() => openDelete(tenant)}><Icon name="trash" size={16}/><span>Request deletion</span></button></td>
+                <td className="actions"><button className="secondary-button compact" disabled={tenant.status === "DELETION_REQUESTED"} title="Set initial tenant administrator" onClick={() => openOwnerContact(tenant)}><Icon name="tenants" size={15}/><span>Owner</span></button><button className="secondary-button compact" title="Edit tenant branding" onClick={() => void openBranding(tenant)}><Icon name="shield" size={15}/><span>Branding</span></button><button className="secondary-button compact" disabled={tenant.status === "DELETION_REQUESTED"} title="Manage tenant domains" onClick={() => openDomains(tenant)}><Icon name="domain" size={15}/><span>Domain</span></button><button className="secondary-button compact" disabled={tenant.status !== "PENDING" || !tenant.initial_owner_email} title={!tenant.initial_owner_email ? "Add the initial administrator before provisioning" : "Start tenant provisioning"} onClick={() => setProvisionTarget(tenant)}><Icon name="grid" size={15}/><span>Provision</span></button><button className="danger-action" disabled={tenant.status !== "PENDING"} title={tenant.status === "PENDING" ? "Request tenant deletion" : tenant.status === "DELETION_REQUESTED" ? "Deletion already requested" : "Final offboarding requires the protected retention workflow"} onClick={() => openDelete(tenant)}><Icon name="trash" size={16}/><span>Request deletion</span></button></td>
               </tr>)}
             </tbody>
           </table>
@@ -330,9 +506,13 @@ export default function ConsoleApp() {
       <section className="modal" role="dialog" aria-modal="true" aria-labelledby="create-title">
         <button className="modal-close" aria-label="Close" onClick={() => setCreateOpen(false)}><Icon name="close"/></button>
         <span className="modal-icon create"><Icon name="plus" size={24}/></span><p className="overline">Tenant onboarding</p><h2 id="create-title">Add a business</h2><p>Create the registry record now. Provisioning and domain verification happen in later workflow steps.</p>
-        <form onSubmit={createTenant}><label htmlFor="tenant-name">Business display name</label><input id="tenant-name" autoFocus value={name} onChange={(event) => setName(event.target.value)} minLength={1} maxLength={200} placeholder="e.g. Northstar Pharmacy" required/><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary-button" disabled={creating}>{creating ? "Creating..." : "Create tenant"}</button></div></form>
+        <form onSubmit={createTenant}><label htmlFor="tenant-name">Business name</label><input id="tenant-name" autoFocus value={name} onChange={(event) => { const nextName = event.target.value; setBrandName((current) => !current || current === name ? nextName : current); setName(nextName); }} minLength={1} maxLength={200} placeholder="e.g. Northstar Pharmacy Private Limited" required/><label htmlFor="owner-email">Initial tenant administrator</label><input id="owner-email" type="email" value={ownerEmail} onChange={(event) => setOwnerEmail(event.target.value)} maxLength={320} autoComplete="email" placeholder="e.g. owner@northstar.example" aria-describedby="owner-email-hint" required/><p className="field-hint" id="owner-email-hint">Create this exact verified email in Keycloak for local sign-in. No invitation email is sent yet.</p><label htmlFor="brand-name">Customer-facing display name</label><input id="brand-name" value={brandName} onChange={(event) => setBrandName(event.target.value)} minLength={1} maxLength={120} placeholder="e.g. Northstar Pharmacy" required/><label htmlFor="brand-initials">Fallback initials <small>Optional — generated automatically</small></label><input id="brand-initials" value={initials} onChange={(event) => setInitials(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))} maxLength={4} placeholder="e.g. NP"/><fieldset className="theme-fieldset"><legend>Store theme</legend><p>One consistent light theme will be used across this tenant’s applications.</p><div className="theme-grid">{themes.map((theme) => <button className={`theme-card ${themeKey === theme.key ? "selected" : ""}`} type="button" key={theme.key} onClick={() => setThemeKey(theme.key)} aria-pressed={themeKey === theme.key}><span className="theme-preview" style={{ background: theme.surface }}><i style={{ background: theme.primary }}/><i style={{ background: theme.primary_dark }}/><i style={{ background: theme.accent }}/></span><strong>{theme.name}</strong>{themeKey === theme.key && <em>Selected</em>}</button>)}</div></fieldset><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setCreateOpen(false)}>Cancel</button><button className="primary-button" disabled={creating || themes.length !== 5}>{creating ? "Creating..." : "Create tenant"}</button></div></form>
       </section>
     </div>}
+
+    {brandingTarget && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setBrandingTarget(null); }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="branding-title"><button className="modal-close" aria-label="Close" onClick={() => setBrandingTarget(null)}><Icon name="close"/></button><span className="modal-icon create"><Icon name="shield" size={24}/></span><p className="overline">Tenant identity</p><h2 id="branding-title">Edit branding</h2><p>Changes are stored centrally and will be consumed by this tenant’s shared applications.</p><form onSubmit={saveBranding}><label htmlFor="edit-brand-name">Display name</label><input id="edit-brand-name" value={brandName} onChange={(event) => setBrandName(event.target.value)} required maxLength={120}/><label htmlFor="edit-initials">Fallback initials</label><input id="edit-initials" value={initials} onChange={(event) => setInitials(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4))} maxLength={4}/><fieldset className="theme-fieldset"><legend>Store theme</legend><p>A single consistent light theme is applied. No dark/light mode switch is created.</p><div className="theme-grid">{themes.map((theme) => <button className={`theme-card ${themeKey === theme.key ? "selected" : ""}`} type="button" key={theme.key} onClick={() => setThemeKey(theme.key)} aria-pressed={themeKey === theme.key}><span className="theme-preview" style={{ background: theme.surface }}><i style={{ background: theme.primary }}/><i style={{ background: theme.primary_dark }}/><i style={{ background: theme.accent }}/></span><strong>{theme.name}</strong>{themeKey === theme.key && <em>Selected</em>}</button>)}</div></fieldset><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setBrandingTarget(null)}>Cancel</button><button className="primary-button" disabled={brandingSaving}>{brandingSaving ? "Saving..." : "Save branding"}</button></div></form></section></div>}
+
+    {contactTarget && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setContactTarget(null); }}><section className="modal contact-modal" role="dialog" aria-modal="true" aria-labelledby="contact-title"><button className="modal-close" aria-label="Close" onClick={() => setContactTarget(null)}><Icon name="close"/></button><span className="modal-icon create"><Icon name="tenants" size={24}/></span><p className="overline">Identity bootstrap</p><h2 id="contact-title">Initial administrator</h2><p>This email must exactly match the verified Keycloak user who will first enter this tenant’s administration workspace.</p><form onSubmit={saveOwnerContact}><div className="tenant-context"><strong>{contactTarget.display_name}</strong><span>{contactTarget.id}</span></div><label htmlFor="contact-email">Administrator email</label><input id="contact-email" type="email" autoFocus value={contactEmail} onChange={(event) => setContactEmail(event.target.value)} maxLength={320} autoComplete="email" required/><p className="field-hint">Updating this contact does not create a Keycloak account, password or membership by itself.</p><div className="modal-actions"><button type="button" className="secondary-button" onClick={() => setContactTarget(null)}>Cancel</button><button className="primary-button" disabled={contactSaving}>{contactSaving ? "Saving..." : "Save administrator"}</button></div></form></section></div>}
 
     {deleteTarget && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDeleteTarget(null); }}>
       <section className="modal danger-modal" role="dialog" aria-modal="true" aria-labelledby="delete-title">
@@ -349,7 +529,7 @@ export default function ConsoleApp() {
         <button className="modal-close" aria-label="Close" onClick={() => setProvisionTarget(null)}><Icon name="close"/></button>
         <span className="modal-icon create"><Icon name="grid" size={24}/></span><p className="overline">Tenant provisioning</p><h2 id="provision-title">Prepare {provisionTarget.display_name}</h2>
         <p>Choose the services to prepare. Each service receives its own schema inside one tenant database.</p>
-        {(["catalogue_fixture", "inventory_fixture", "media_fixture"] as const).map((service) => <label className="service-option" key={service}><input type="checkbox" checked={provisionServices.includes(service)} onChange={() => setProvisionServices((current) => current.includes(service) ? current.filter((item) => item !== service) : [...current, service])}/><span><strong>{service === "catalogue_fixture" ? "Catalogue" : service === "inventory_fixture" ? "Inventory" : "Media"}</strong><small>{service === "catalogue_fixture" ? "Products and categories" : service === "inventory_fixture" ? "Stock and availability" : "Secure product image storage"}</small></span></label>)}
+        {(["identity_access", "catalogue_fixture", "inventory_fixture", "media_fixture"] as const).map((service) => <label className="service-option" key={service}><input type="checkbox" checked={provisionServices.includes(service)} onChange={() => setProvisionServices((current) => current.includes(service) ? current.filter((item) => item !== service) : [...current, service])}/><span><strong>{servicePresentation[service].name}</strong><small>{servicePresentation[service].description}</small></span></label>)}
         <div className="modal-actions"><button className="secondary-button" onClick={() => setProvisionTarget(null)}>Cancel</button><button className="primary-button" disabled={provisioning || provisionServices.length === 0} onClick={startProvisioning}>{provisioning ? "Starting..." : "Start provisioning"}</button></div>
       </section>
     </div>}

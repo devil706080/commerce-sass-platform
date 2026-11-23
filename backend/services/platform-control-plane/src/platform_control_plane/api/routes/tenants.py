@@ -8,11 +8,16 @@ from sqlalchemy.orm import Session
 
 from platform_control_plane.dependencies.database import get_session
 from platform_control_plane.dependencies.operator import Operator, require_operator
-from platform_control_plane.schemas.tenant import TenantCreate, TenantResponse
+from platform_control_plane.schemas.branding import generated_initials
+from platform_control_plane.schemas.tenant import (
+    TenantCreate,
+    TenantOwnerContactUpdate,
+    TenantResponse,
+)
 
 router = APIRouter(prefix="/api/v1/tenants", dependencies=[Depends(require_operator)])
 SessionDep = Annotated[Session, Depends(get_session)]
-_FIELDS = "id, display_name, status, created_at, updated_at"
+_FIELDS = "id, display_name, initial_owner_email, status, created_at, updated_at"
 
 
 @router.post("", response_model=TenantResponse, status_code=201)
@@ -47,16 +52,35 @@ def create_tenant(
     tenant = (
         session.execute(
             text(
-                "INSERT INTO tenants (id, display_name) VALUES (:id, :name) "
+                "INSERT INTO tenants (id, display_name, initial_owner_email) "
+                "VALUES (:id, :name, :owner_email) "
                 f"ON CONFLICT (lower(btrim(display_name))) DO NOTHING RETURNING {_FIELDS}"
             ),
-            {"id": tenant_id, "name": payload.display_name},
+            {
+                "id": tenant_id,
+                "name": payload.display_name,
+                "owner_email": str(payload.initial_owner_email),
+            },
         )
         .mappings()
         .one_or_none()
     )
     if tenant is None:
         raise HTTPException(status_code=409, detail="A tenant with this name already exists")
+    branding_name = payload.storefront_display_name or payload.display_name
+    session.execute(
+        text(
+            "INSERT INTO tenant_branding "
+            "(tenant_id, display_name, fallback_initials, theme_key) "
+            "VALUES (:tenant, :name, :initials, :theme)"
+        ),
+        {
+            "tenant": tenant_id,
+            "name": branding_name,
+            "initials": payload.fallback_initials or generated_initials(branding_name),
+            "theme": payload.theme_key,
+        },
+    )
     session.execute(
         text(
             "INSERT INTO tenant_create_idempotency (request_key, request_hash, tenant_id) "
@@ -107,6 +131,43 @@ def get_tenant(tenant_id: UUID, session: SessionDep) -> Any:
     )
     if tenant is None:
         raise HTTPException(status_code=404, detail="Tenant not found")
+    return tenant
+
+
+@router.put("/{tenant_id}/owner-contact", response_model=TenantResponse)
+def update_owner_contact(
+    tenant_id: UUID,
+    payload: TenantOwnerContactUpdate,
+    session: SessionDep,
+    operator: Annotated[Operator, Depends(require_operator)],
+) -> Any:
+    tenant = (
+        session.execute(
+            text(
+                "UPDATE tenants SET initial_owner_email=:owner_email, updated_at=now() "
+                f"WHERE id=:id AND status <> 'DELETION_REQUESTED' RETURNING {_FIELDS}"
+            ),
+            {"id": tenant_id, "owner_email": str(payload.initial_owner_email)},
+        )
+        .mappings()
+        .one_or_none()
+    )
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant not found or unavailable")
+    session.execute(
+        text(
+            "INSERT INTO tenant_audit_events "
+            "(id, tenant_id, action, actor_issuer, actor_subject) "
+            "VALUES (:audit, :tenant, 'TENANT_OWNER_CONTACT_UPDATED', :issuer, :subject)"
+        ),
+        {
+            "audit": uuid4(),
+            "tenant": tenant_id,
+            "issuer": operator.issuer,
+            "subject": operator.subject,
+        },
+    )
+    session.commit()
     return tenant
 
 

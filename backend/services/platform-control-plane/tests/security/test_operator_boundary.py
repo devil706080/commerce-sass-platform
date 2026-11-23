@@ -16,7 +16,14 @@ def test_untrusted_headers_cannot_authorize_tenant_operations(monkeypatch):
         requests = [
             client.get("/api/v1/tenants", headers=forged),
             client.get("/api/v1/tenants/11111111-1111-1111-1111-111111111111", headers=forged),
-            client.post("/api/v1/tenants", headers=forged, json={"display_name": "Example"}),
+            client.post(
+                "/api/v1/tenants",
+                headers=forged,
+                json={
+                    "display_name": "Example",
+                    "initial_owner_email": "owner@example.com",
+                },
+            ),
         ]
         assert all(response.status_code == 403 for response in requests)
         assert all(

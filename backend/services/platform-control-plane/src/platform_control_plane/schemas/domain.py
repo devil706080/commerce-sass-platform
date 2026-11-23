@@ -13,6 +13,7 @@ _HOSTNAME = re.compile(
 class DomainCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     hostname: str = Field(min_length=1, max_length=253)
+    purpose: Literal["STOREFRONT", "TENANT_ADMIN"] = "STOREFRONT"
 
     @field_validator("hostname")
     @classmethod
@@ -33,6 +34,7 @@ class DomainResponse(BaseModel):
     id: UUID
     tenant_id: UUID
     hostname: str
+    purpose: Literal["STOREFRONT", "TENANT_ADMIN"]
     verification_status: Literal["PENDING_VERIFICATION", "VERIFIED"]
     verification_method: Literal["LOCAL"]
     verified_at: datetime | None
