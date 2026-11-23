@@ -137,6 +137,49 @@ class IdentityRepository:
             return None
         return self._membership(row)
 
+    def bootstrap_owner(self, identity: AuthenticatedIdentity) -> Membership:
+        with self.connection() as connection:
+            connection.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                ("identity-owner-bootstrap",),
+            )
+            existing_owner = connection.execute(
+                "SELECT 1 FROM staff_memberships "
+                "WHERE role='TENANT_OWNER' AND status='ACTIVE' LIMIT 1"
+            ).fetchone()
+            if existing_owner:
+                existing = self._find_membership(connection, identity)
+                if existing:
+                    return self._membership(existing)
+                raise OwnerBootstrapConflict
+            principal = connection.execute(
+                "INSERT INTO identity_principals "
+                "(id,issuer,subject,email,display_name) VALUES (%s,%s,%s,%s,%s) "
+                "ON CONFLICT (issuer,subject) DO UPDATE SET email=EXCLUDED.email, "
+                "display_name=EXCLUDED.display_name,last_seen_at=now() RETURNING id",
+                (uuid4(), identity.issuer, identity.subject, identity.email, identity.display_name),
+            ).fetchone()
+            if principal is None:
+                raise RuntimeError("principal upsert returned no row")
+            row = connection.execute(
+                "INSERT INTO staff_memberships (id,principal_id,role,status) "
+                "VALUES (%s,%s,'TENANT_OWNER','ACTIVE') "
+                "ON CONFLICT (principal_id) DO UPDATE SET role='TENANT_OWNER',"
+                "status='ACTIVE',updated_at=now() "
+                "RETURNING id,principal_id,role,status",
+                (uuid4(), principal["id"]),
+            ).fetchone()
+            if row is None:
+                raise RuntimeError("owner membership upsert returned no row")
+            return Membership(
+                id=row["id"],
+                principal_id=row["principal_id"],
+                email=identity.email,
+                display_name=identity.display_name,
+                role=StaffRole(row["role"]),
+                status=MembershipStatus(row["status"]),
+            )
+
     @staticmethod
     def _find_membership(
         connection: psycopg.Connection[dict[str, Any]], identity: AuthenticatedIdentity

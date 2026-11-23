@@ -59,7 +59,9 @@ def test_local_secret_is_idempotent_and_file_is_not_world_readable(tmp_path: Pat
     assert first.runtime_password != first.migrator_password
     assert first.reference == f"local-volume://{job_id}.json"
     if os.name != "nt":
-        assert (tmp_path / f"{job_id}.json").stat().st_mode & 0o077 == 0
+        mode = (tmp_path / f"{job_id}.json").stat().st_mode
+        assert mode & 0o040 != 0  # deployment-selected reader group
+        assert mode & 0o007 == 0  # never world-readable
     payload = json.loads((tmp_path / f"{job_id}.json").read_text(encoding="utf-8"))
     assert set(payload) == {"runtime_password", "migrator_password"}
 

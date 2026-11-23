@@ -31,8 +31,8 @@
     "publicClient": true,
     "standardFlowEnabled": true,
     "directAccessGrantsEnabled": false,
-    "redirectUris": ["http://localhost:3001/*", "http://admin.lifemac.localhost:3001/*"],
-    "webOrigins": ["http://localhost:3001", "http://admin.lifemac.localhost:3001"],
+    "redirectUris": ["http://localhost:3001/*"],
+    "webOrigins": ["http://localhost:3001"],
     "attributes": { "pkce.code.challenge.method": "S256" },
     "protocolMappers": [{
       "name": "catalogue-api-audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
@@ -43,9 +43,6 @@
     }, {
       "name": "identity-api-audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
       "config": { "included.custom.audience": "identity-api", "access.token.claim": "true", "id.token.claim": "false" }
-    }, {
-      "name": "tenant-id", "protocol": "openid-connect", "protocolMapper": "oidc-hardcoded-claim-mapper",
-      "config": { "claim.value": "49e84243-f9e4-4981-b3a5-38f943cc79ba", "claim.name": "tenant_id", "claim.jsonType": "String", "access.token.claim": "true", "id.token.claim": "true", "userinfo.token.claim": "true" }
     }]
   }, {
     "clientId": "storefront",

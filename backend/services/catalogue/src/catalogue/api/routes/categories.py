@@ -1,13 +1,13 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from catalogue.application.category_service import CategoryService
-from catalogue.config.settings import load_settings
 from catalogue.dependencies.context import admin_context
 from catalogue.infrastructure.category_repository import CategoryRepository
 from catalogue.schemas.category import Category, CategoryCreate, CategoryUpdate
 
 router = APIRouter(prefix="/api/v1/categories")
-def service() -> CategoryService: return CategoryService(CategoryRepository(load_settings()))
+def service(request: Request, _context=Depends(admin_context)) -> CategoryService:
+    return CategoryService(CategoryRepository(request.state.tenant_settings))
 
 @router.get("", response_model=list[Category])
 def list_categories(_context=Depends(admin_context), categories: CategoryService = Depends(service)): return categories.list_categories()

@@ -48,6 +48,10 @@ class FakeRepository:
     def can_bootstrap_owner(self, email):
         return self.bootstrap_allowed
 
+    def bootstrap_owner(self, authenticated):
+        self.membership = membership()
+        return self.membership
+
 
 def membership(role=StaffRole.TENANT_OWNER, status=MembershipStatus.ACTIVE) -> Membership:
     return Membership(uuid4(), uuid4(), "admin@lifemac.test", "Admin", role, status)
@@ -98,4 +102,22 @@ def test_invitation_acceptance_requires_a_matching_pending_invitation():
     service = IdentityService(FakeRepository())  # type: ignore[arg-type]
     with pytest.raises(HTTPException) as error:
         service.accept(identity("tenant-admin"))
+    assert error.value.status_code == 403
+
+
+def test_exact_initial_owner_can_claim_membership_once():
+    repository = FakeRepository()
+    service = IdentityService(repository)  # type: ignore[arg-type]
+    resolved = service.resolve_membership(
+        identity("tenant-admin", email="owner@example.test"), "owner@example.test"
+    )
+    assert resolved.role == StaffRole.TENANT_OWNER
+
+
+def test_different_email_cannot_claim_initial_owner_membership():
+    service = IdentityService(FakeRepository())  # type: ignore[arg-type]
+    with pytest.raises(HTTPException) as error:
+        service.resolve_membership(
+            identity("tenant-admin", email="attacker@example.test"), "owner@example.test"
+        )
     assert error.value.status_code == 403

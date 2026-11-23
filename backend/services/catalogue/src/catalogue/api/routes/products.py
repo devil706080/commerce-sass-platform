@@ -1,7 +1,6 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from catalogue.application.product_service import ProductService
-from catalogue.config.settings import load_settings
 from catalogue.dependencies.context import admin_context
 from catalogue.infrastructure.product_repository import ProductRepository
 from catalogue.schemas.category import Category
@@ -9,8 +8,8 @@ from catalogue.schemas.product import Product, ProductCreate, ProductUpdate
 
 router = APIRouter(prefix="/api/v1/products")
 
-def service() -> ProductService:
-    return ProductService(ProductRepository(load_settings()))
+def service(request: Request, _context=Depends(admin_context)) -> ProductService:
+    return ProductService(ProductRepository(request.state.tenant_settings))
 
 @router.get("", response_model=list[Product])
 def list_products(search: str | None = None, published: bool | None = None, limit: int = Query(50, ge=1, le=100), offset: int = Query(0, ge=0), _context=Depends(admin_context), products: ProductService = Depends(service)):

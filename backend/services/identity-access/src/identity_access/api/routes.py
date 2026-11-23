@@ -19,7 +19,7 @@ IdentityDep = Annotated[AuthenticatedIdentity, Depends(require_identity)]
 
 
 def service(request: Request) -> IdentityService:
-    return IdentityService(IdentityRepository(request.app.state.settings))
+    return IdentityService(IdentityRepository(request.state.tenant_settings))
 
 
 @router.post("/staff/invitations", response_model=InvitationResponse, status_code=201)
@@ -39,7 +39,7 @@ def accept_invitation(
 ) -> MeResponse:
     membership = application.accept(identity)
     return MeResponse(
-        tenant_id=request.app.state.settings.tenant_id,
+        tenant_id=request.state.tenant_settings.tenant_id,
         membership=MembershipResponse.model_validate(membership, from_attributes=True),
     )
 
@@ -50,9 +50,11 @@ def me(
     identity: IdentityDep,
     application: Annotated[IdentityService, Depends(service)],
 ) -> MeResponse:
-    membership = application.require_active_membership(identity)
+    membership = application.resolve_membership(
+        identity, request.state.tenant_settings.initial_owner_email
+    )
     return MeResponse(
-        tenant_id=request.app.state.settings.tenant_id,
+        tenant_id=request.state.tenant_settings.tenant_id,
         membership=MembershipResponse.model_validate(membership, from_attributes=True),
     )
 

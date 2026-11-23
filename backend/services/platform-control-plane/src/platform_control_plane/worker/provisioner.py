@@ -15,7 +15,6 @@ SERVICE_CODES = {
     "identity_access": "identity",
 }
 
-
 @dataclass(frozen=True)
 class DatabaseIdentity:
     database_name: str
@@ -44,7 +43,11 @@ def database_identity(tenant_id: UUID, service_key: str) -> DatabaseIdentity:
 
 def load_or_create_secrets(directory: str, job_id: UUID) -> ServiceSecrets:
     root = Path(directory)
-    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    root.mkdir(mode=0o2750, parents=True, exist_ok=True)
+    # The directory itself also needs group traversal for the read-only
+    # service containers. The deployment owns the directory group; setgid
+    # makes new secret files inherit it without embedding a numeric identity.
+    os.chmod(root, 0o2750)
     path = root / f"{job_id}.json"
     reference = f"local-volume://{path.name}"
     try:
@@ -60,9 +63,13 @@ def load_or_create_secrets(directory: str, job_id: UUID) -> ServiceSecrets:
             with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
                 json.dump(payload, handle)
             os.replace(temporary, path)
+            os.chmod(path, 0o640)
         except BaseException:
             temporary.unlink(missing_ok=True)
             raise
+    # Normalize permissions on existing files as well, so upgrading an
+    # installation repairs files created by the previous 0600-only writer.
+    os.chmod(path, 0o640)
     if set(payload) != {"runtime_password", "migrator_password"}:
         raise ValueError("invalid local secret payload")
     return ServiceSecrets(payload["runtime_password"], payload["migrator_password"], reference)

@@ -1,28 +1,30 @@
-import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote_plus
 
 @dataclass(frozen=True)
 class Settings:
     database_url: str | None
     schema_name: str
-    tenant_hosts: dict[str, str]
     oidc_issuer: str = ""
     oidc_audience: str = ""
     oidc_jwks_url: str = ""
+    tenant_context_signing_secret: str = ""
+    provisioned_secrets_dir: Path = Path("/var/lib/platform-secrets")
+    db_host: str = "postgres"
+    db_port: int = 5432
 
 def load_settings() -> Settings:
-    database_url = os.getenv("CATALOGUE_DATABASE_URL")
-    secret_file = os.getenv("CATALOGUE_SECRET_FILE")
-    if not database_url and secret_file:
-        payload = json.loads(Path(secret_file).read_text(encoding="utf-8"))
-        database_url = "postgresql://{}:{}@{}:{}/{}".format(
-            quote_plus(os.environ["CATALOGUE_RUNTIME_ROLE"]),
-            quote_plus(payload["runtime_password"]),
-            os.getenv("CATALOGUE_DB_HOST", "postgres"),
-            os.getenv("CATALOGUE_DB_PORT", "5432"),
-            os.environ["CATALOGUE_DATABASE_NAME"],
-        )
-    return Settings(database_url, os.getenv("CATALOGUE_SCHEMA", "catfx"), json.loads(os.getenv("TENANT_HOSTS", "{}")), os.getenv("CATALOGUE_OIDC_ISSUER", ""), os.getenv("CATALOGUE_OIDC_AUDIENCE", ""), os.getenv("CATALOGUE_OIDC_JWKS_URL", ""))
+    return Settings(
+        database_url=None,
+        schema_name=os.getenv("CATALOGUE_SCHEMA", "catfx"),
+        oidc_issuer=os.getenv("CATALOGUE_OIDC_ISSUER", ""),
+        oidc_audience=os.getenv("CATALOGUE_OIDC_AUDIENCE", ""),
+        oidc_jwks_url=os.getenv("CATALOGUE_OIDC_JWKS_URL", ""),
+        tenant_context_signing_secret=os.getenv("TENANT_CONTEXT_SIGNING_SECRET", ""),
+        provisioned_secrets_dir=Path(
+            os.getenv("PROVISIONED_SECRETS_DIR", "/var/lib/platform-secrets")
+        ),
+        db_host=os.getenv("CATALOGUE_DB_HOST", "postgres"),
+        db_port=int(os.getenv("CATALOGUE_DB_PORT", "5432")),
+    )

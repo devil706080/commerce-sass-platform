@@ -16,6 +16,7 @@ from platform_control_plane.api.routes import (
     local_preview,
     provisioning,
     readiness,
+    tenant_context,
     tenants,
 )
 from platform_control_plane.core.config import RuntimeSettings
@@ -48,6 +49,7 @@ def create_app() -> FastAPI:
         )
     app.include_router(health.router)
     app.include_router(readiness.router)
+    app.include_router(tenant_context.router)
     app.include_router(local_preview.router)
     app.include_router(tenants.router)
     app.include_router(branding.router)

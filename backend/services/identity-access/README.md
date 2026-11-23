@@ -1,7 +1,7 @@
 # Identity & Access
 
-**Status:** Tenant staff identity boundary implemented; live local database verification remains
-environment-dependent.
+**Status:** Dynamic tenant staff identity boundary implemented. Container/runtime verification is
+required after rebuilding the local stack.
 
 ## Implemented scope
 
@@ -24,38 +24,38 @@ owners/admins manage staff; only an owner may invite another owner.
 
 ## Security and tenant boundary
 
-- Requests fail closed unless the normalized hostname is in `IDENTITY_ALLOWED_HOSTS`.
-- The browser cannot select a tenant using a header, query parameter or request body.
+- The Tenant Admin server sends a short-lived Control Plane-signed context created from a verified,
+  active Tenant Admin hostname. Identity validates its issuer, audience, signature and expiry.
+- The browser cannot select a tenant, database, role or secret reference using a header, query
+  parameter or request body.
 - Bearer tokens must be RS256 tokens with the configured issuer, `identity-api` audience,
   expiration, subject, email and `email_verified=true`.
 - Principal identity is `(issuer, subject)`; matching email alone never links accounts.
 - The runtime role has table DML only. The independent migrator role owns schema changes.
-- Database passwords are read from a mounted tenant-specific secret file and never embedded in
-  the image or committed Compose configuration.
-- The Identity volume contains only the selected service secret. The shared provisioner secret
-  volume must not be mounted into this runtime.
+- Database passwords are resolved from the signed secret reference in the local read-only secret
+  volume and never enter a token, browser response, image or committed Compose configuration.
+- The exact verified initial-owner email may claim the first owner membership once. After that,
+  access always requires the tenant database membership bound to `(issuer, subject)`.
 
 ## Local configuration
 
-The Control Plane must first provision `identity_access` for the tenant. Configure these ignored
-local environment values from the provisioning metadata (none are passwords):
+The Control Plane must provision and migrate `identity_access` for each tenant. Runtime tenant
+routing is automatic; configure only shared infrastructure/OIDC settings and generated secrets:
 
 ```text
-IDENTITY_TENANT_ID
-IDENTITY_ALLOWED_HOSTS
-IDENTITY_DATABASE_NAME
-IDENTITY_RUNTIME_ROLE
-IDENTITY_MIGRATOR_ROLE
-IDENTITY_CORS_ORIGINS
+TENANT_CONTEXT_BROKER_TOKEN
+TENANT_CONTEXT_SIGNING_SECRET
+IDENTITY_OIDC_ISSUER
+IDENTITY_OIDC_AUDIENCE
+IDENTITY_OIDC_JWKS_URL
 ```
 
-The selected provisioned credential JSON must be copied, without printing it, into the dedicated
-`identity_secrets` volume as `/database.json`, owned by container UID/GID `10004` with mode `0600`.
-Then run the owning-service migration before starting the API:
+The local Keycloak synchronizer reads active verified admin hostnames from the protected Control
+Plane endpoint and registers exact redirect origins; it also removes the obsolete hardcoded
+`tenant_id` mapper. No tenant hostname or ID is committed to the realm configuration.
 
 ```powershell
-docker compose --env-file .env -f .\infra\local\compose.yaml --profile identity-migration run --rm identity-access-migrate
-docker compose --env-file .env -f .\infra\local\compose.yaml --profile identity --profile identity-access up -d --build keycloak identity-access
+docker compose --env-file .env -f .\infra\local\compose.yaml --profile identity --profile platform-control --profile identity-access up -d --build keycloak platform-control identity-access identity-config-sync
 ```
 
 Do not use the PostgreSQL bootstrap administrator, provisioner or Control Plane credentials for
@@ -77,5 +77,5 @@ uv run --group dev pytest -q
 This increment does not implement customer password/OTP/social login, server-managed browser
 sessions, MFA, recovery, session revocation, invitation email delivery, staff role/status mutation
 or audit-event publication. Those require separately approved Identity increments and provider
-decisions. The Tenant Admin UI integration is a separate application task and must consume these
-APIs; it must not write Identity tables directly.
+decisions. Tenant Admin consumes these APIs only through its server gateway and never writes
+Identity tables directly.

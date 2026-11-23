@@ -1,5 +1,19 @@
 # Test results
 
+## Dynamic Tenant Admin isolation (2026-11-23)
+
+- Identity unit/security suite: 11 passed.
+- Control Plane signed-context security tests: 3 passed.
+- Catalogue suite including signed cross-tenant database routing: 9 passed.
+- Media signed database/storage isolation tests: 2 passed.
+- Tenant Admin strict TypeScript check passed and the optimized Next.js production build passed.
+- Python source compilation and Keycloak realm JSON validation passed. Catalogue lock verification
+  passed and a Media lockfile was generated with pinned uv 0.13.8.
+- One upstream Starlette TestClient deprecation warning remains in each Python suite.
+- Docker Compose validation, image rebuild, live Keycloak redirect synchronization, database
+  connectivity and browser login were not run because `docker` is unavailable on this execution
+  environment's PATH. No live-runtime completion claim is made.
+
 ## Central tenant branding and curated themes (2026-11-18)
 
 - Alembic revisions `012_tenant_branding` and `013_branding_privileges` were applied by the dedicated Control Plane migrator; `013_branding_privileges` is the verified head.

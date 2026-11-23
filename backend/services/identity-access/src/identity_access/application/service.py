@@ -48,6 +48,25 @@ class IdentityService:
             raise HTTPException(status_code=403, detail="Tenant membership unavailable")
         return membership
 
+    def resolve_membership(
+        self, identity: AuthenticatedIdentity, initial_owner_email: str | None
+    ) -> Membership:
+        membership = self.repository.find_membership(identity)
+        if membership is not None and membership.status == MembershipStatus.ACTIVE:
+            return membership
+        if (
+            initial_owner_email
+            and identity.email == initial_owner_email.casefold()
+            and "tenant-admin" in identity.realm_roles
+        ):
+            try:
+                return self.repository.bootstrap_owner(identity)
+            except OwnerBootstrapConflict:
+                raise HTTPException(
+                    status_code=403, detail="Tenant membership unavailable"
+                ) from None
+        raise HTTPException(status_code=403, detail="Tenant membership unavailable")
+
     def list_staff(self, identity: AuthenticatedIdentity) -> list[Membership]:
         membership = self.require_active_membership(identity)
         if membership.role not in {StaffRole.TENANT_OWNER, StaffRole.TENANT_ADMIN}:

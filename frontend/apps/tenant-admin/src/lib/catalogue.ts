@@ -6,10 +6,9 @@ export type ProductInput = { sku: string; name: string; description?: string; pr
 export type CategoryInput = { name: string; slug: string; description?: string };
 export type ProductImage = { id: string; url: string; alt_text: string | null; sort_order: number };
 
-const baseUrl = process.env.NEXT_PUBLIC_CATALOGUE_API_URL;
+const baseUrl = "/api/tenant/catalogue";
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  if (!baseUrl) throw new Error("Catalogue API is not configured");
   const token = await getAccessToken();
   const response = await fetch(`${baseUrl}${path}`, { ...options, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json", ...options.headers } });
   if (!response.ok) {
@@ -33,8 +32,7 @@ export const catalogueApi = {
 };
 
 export async function uploadProductImage(file: File): Promise<{ id: string; url: string; width: number; height: number }> {
-  const base = process.env.NEXT_PUBLIC_MEDIA_API_URL;
-  if (!base) throw new Error("Media upload is not configured for this tenant");
+  const base = "/api/tenant/media";
   if (!file.type.match(/^image\/(jpeg|png|webp)$/)) throw new Error("Choose a JPEG, PNG, or WebP image");
   if (file.size > 5 * 1024 * 1024) throw new Error("Image must be no larger than 5 MB");
   const token = await getAccessToken(); const body = new FormData(); body.append("file", file);

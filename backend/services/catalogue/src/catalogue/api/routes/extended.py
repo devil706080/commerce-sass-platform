@@ -1,13 +1,13 @@
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from catalogue.application.extended_service import ExtendedService
-from catalogue.config.settings import load_settings
 from catalogue.dependencies.context import admin_context
 from catalogue.infrastructure.extended_repository import ExtendedRepository
 from catalogue.schemas.extended import Image, ImageCreate, ImageUpdate, Variant, VariantCreate, VariantUpdate, PriceRule, PriceRuleCreate, PriceRuleUpdate
 
 router=APIRouter(prefix="/api/v1/products")
-def service() -> ExtendedService: return ExtendedService(ExtendedRepository(load_settings()))
+def service(request: Request, _context=Depends(admin_context)) -> ExtendedService:
+    return ExtendedService(ExtendedRepository(request.state.tenant_settings))
 
 @router.get("/{product_id}/images", response_model=list[Image])
 def images(product_id: UUID, _context=Depends(admin_context), catalogue: ExtendedService=Depends(service)):

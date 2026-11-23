@@ -1,8 +1,6 @@
-import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote_plus
 
 
 @dataclass(frozen=True)
@@ -15,15 +13,26 @@ class Settings:
     jwks_url: str
     max_upload_bytes: int
     max_pixels: int
+    tenant_context_signing_secret: str
+    provisioned_secrets_dir: Path
+    db_host: str
+    db_port: int
 
 
 def load_settings() -> Settings:
-    database_url = os.getenv("MEDIA_DATABASE_URL")
-    secret_file = os.getenv("MEDIA_SECRET_FILE")
-    if not database_url and secret_file:
-        secret = json.loads(Path(secret_file).read_text(encoding="utf-8"))
-        database_url = "postgresql://{}:{}@{}:{}/{}".format(
-            quote_plus(os.environ["MEDIA_RUNTIME_ROLE"]), quote_plus(secret["runtime_password"]),
-            os.getenv("MEDIA_DB_HOST", "postgres"), os.getenv("MEDIA_DB_PORT", "5432"), os.environ["MEDIA_DATABASE_NAME"],
-        )
-    return Settings(database_url, os.getenv("MEDIA_SCHEMA", "medfx"), Path(os.getenv("MEDIA_STORAGE_ROOT", "/var/lib/commerce-media")), os.getenv("MEDIA_OIDC_ISSUER", ""), os.getenv("MEDIA_OIDC_AUDIENCE", ""), os.getenv("MEDIA_OIDC_JWKS_URL", ""), int(os.getenv("MEDIA_MAX_UPLOAD_BYTES", "5242880")), int(os.getenv("MEDIA_MAX_PIXELS", "20000000")))
+    return Settings(
+        database_url=None,
+        schema=os.getenv("MEDIA_SCHEMA", "medfx"),
+        storage_root=Path(os.getenv("MEDIA_STORAGE_ROOT", "/var/lib/commerce-media")),
+        issuer=os.getenv("MEDIA_OIDC_ISSUER", ""),
+        audience=os.getenv("MEDIA_OIDC_AUDIENCE", ""),
+        jwks_url=os.getenv("MEDIA_OIDC_JWKS_URL", ""),
+        max_upload_bytes=int(os.getenv("MEDIA_MAX_UPLOAD_BYTES", "5242880")),
+        max_pixels=int(os.getenv("MEDIA_MAX_PIXELS", "20000000")),
+        tenant_context_signing_secret=os.getenv("TENANT_CONTEXT_SIGNING_SECRET", ""),
+        provisioned_secrets_dir=Path(
+            os.getenv("PROVISIONED_SECRETS_DIR", "/var/lib/platform-secrets")
+        ),
+        db_host=os.getenv("MEDIA_DB_HOST", "postgres"),
+        db_port=int(os.getenv("MEDIA_DB_PORT", "5432")),
+    )

@@ -57,6 +57,43 @@ def test_local_preview_is_disabled_in_production(monkeypatch):
         assert client.get("/_local/tenant").status_code == 404
 
 
+def test_local_tenant_admin_context_requires_active_verified_admin_domain(monkeypatch):
+    monkeypatch.setenv("DB_HOST", "127.0.0.1")
+    monkeypatch.setenv("PLATFORM_CONTROL_RUNTIME_PASSWORD", "test")
+    monkeypatch.setenv("APP_ENVIRONMENT", "local")
+
+    class Result:
+        def mappings(self):
+            return self
+
+        def one_or_none(self):
+            return {
+                "tenant_id": "00000000-0000-0000-0000-000000000001",
+                "hostname": "admin.example.localhost",
+                "purpose": "TENANT_ADMIN",
+                "display_name": "Example Admin",
+                "fallback_initials": "EA",
+                "theme_key": "ocean_teal",
+                "tenant_status": "ACTIVE",
+                "domain_status": "VERIFIED",
+            }
+
+    class Session:
+        def execute(self, statement, parameters):
+            assert parameters["hostname"] == "admin.example.localhost"
+            assert "d.purpose = 'TENANT_ADMIN'" in str(statement)
+            assert "t.status = 'ACTIVE'" in str(statement)
+            return Result()
+
+    app = create_app()
+    app.dependency_overrides[get_session] = lambda: Session()
+    with TestClient(app, base_url="http://admin.example.localhost") as client:
+        response = client.get("/_local/tenant-admin")
+    assert response.status_code == 200
+    assert response.json()["display_name"] == "Example Admin"
+    assert response.json()["palette"]["primary"] == "#0969B8"
+
+
 def test_rejects_public_host_and_production_mapping():
     with pytest.raises(ValidationError):
         RuntimeSettings(

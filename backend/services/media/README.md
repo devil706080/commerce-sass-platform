@@ -1,6 +1,8 @@
 # Media
 
-**Status:** Directory placeholder only. Runtime code is intentionally not scaffolded yet.
+**Status:** Tenant-scoped image upload runtime implemented for Tenant Admin. JPEG, PNG and WebP
+content is validated, decoded, pixel-limited and re-encoded to WebP before storage. Metadata and
+files are routed from a short-lived signed tenant context; browser-selected tenant IDs are denied.
 
 ## Bounded context and data ownership
 

@@ -12,7 +12,6 @@ bearer_scheme = HTTPBearer(
 @dataclass(frozen=True)
 class CatalogueIdentity:
     subject: str
-    tenant_id: str
     roles: tuple[str, ...]
 
 def require_catalogue_admin(
@@ -32,10 +31,9 @@ def require_catalogue_admin(
         raise HTTPException(status_code=401, detail="Invalid access token") from None
     access = claims.get("realm_access")
     roles = access.get("roles", []) if isinstance(access, dict) else []
-    tenant_id = claims.get("tenant_id")
     subject = claims.get("sub")
-    if not isinstance(subject, str) or not isinstance(tenant_id, str) or not isinstance(roles, list):
+    if not isinstance(subject, str) or not isinstance(roles, list):
         raise HTTPException(status_code=403, detail="Tenant authorization unavailable")
     if not any(role in roles for role in ("tenant-admin", "platform-operator")):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Permission denied")
-    return CatalogueIdentity(subject, tenant_id, tuple(str(role) for role in roles))
+    return CatalogueIdentity(subject, tuple(str(role) for role in roles))

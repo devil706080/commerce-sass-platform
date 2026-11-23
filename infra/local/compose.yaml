@@ -22,10 +22,14 @@ services:
     profiles: ["platform-control"]
     build:
       context: ../../backend/services/platform-control-plane
+      args:
+        PROVISIONED_SECRETS_READER_GID: ${PROVISIONED_SECRETS_READER_GID:?Configure PROVISIONED_SECRETS_READER_GID in .env}
     environment:
       DB_HOST: postgres
       APP_ENVIRONMENT: ${APP_ENVIRONMENT:-local}
       LOCAL_TENANT_LABELS: ${LOCAL_TENANT_LABELS:-}
+      TENANT_CONTEXT_BROKER_TOKEN: ${TENANT_CONTEXT_BROKER_TOKEN:?Run scripts/bootstrap_identity.py first}
+      TENANT_CONTEXT_SIGNING_SECRET: ${TENANT_CONTEXT_SIGNING_SECRET:?Run scripts/bootstrap_identity.py first}
       OIDC_ISSUER: http://localhost:8080/realms/platform-local
       OIDC_AUDIENCE: control-api
       OIDC_JWKS_URL: http://keycloak:8080/realms/platform-local/protocol/openid-connect/certs
@@ -45,6 +49,8 @@ services:
     profiles: ["provisioning"]
     build:
       context: ../../backend/services/platform-control-plane
+      args:
+        PROVISIONED_SECRETS_READER_GID: ${PROVISIONED_SECRETS_READER_GID:?Configure PROVISIONED_SECRETS_READER_GID in .env}
     command: ["python", "-m", "platform_control_plane.worker.main"]
     environment:
       DB_HOST: postgres
@@ -53,6 +59,8 @@ services:
       LOCAL_PROVISIONED_SECRETS_DIR: /var/lib/platform-secrets
     volumes:
       - provisioned_secrets:/var/lib/platform-secrets
+    group_add:
+      - "${PROVISIONED_SECRETS_READER_GID:?Configure PROVISIONED_SECRETS_READER_GID in .env}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -66,6 +74,8 @@ services:
     profiles: ["migration"]
     build:
       context: ../../backend/services/platform-control-plane
+      args:
+        PROVISIONED_SECRETS_READER_GID: ${PROVISIONED_SECRETS_READER_GID:?Configure PROVISIONED_SECRETS_READER_GID in .env}
     command: ["alembic", "upgrade", "head"]
     environment:
       DB_HOST: postgres
@@ -81,6 +91,8 @@ services:
     profiles: ["service-migration"]
     build:
       context: ../../backend/services/platform-control-plane
+      args:
+        PROVISIONED_SECRETS_READER_GID: ${PROVISIONED_SECRETS_READER_GID:?Configure PROVISIONED_SECRETS_READER_GID in .env}
     command: ["python", "-m", "platform_control_plane.worker.service_migrations"]
     environment:
       DB_HOST: postgres
@@ -124,12 +136,6 @@ services:
     build:
       context: ../../backend/services/identity-access
     environment:
-      IDENTITY_TENANT_ID: ${IDENTITY_TENANT_ID:-}
-      IDENTITY_ALLOWED_HOSTS: ${IDENTITY_ALLOWED_HOSTS:-}
-      IDENTITY_DATABASE_NAME: ${IDENTITY_DATABASE_NAME:-}
-      IDENTITY_RUNTIME_ROLE: ${IDENTITY_RUNTIME_ROLE:-}
-      IDENTITY_MIGRATOR_ROLE: ${IDENTITY_MIGRATOR_ROLE:-}
-      IDENTITY_SECRET_FILE: /var/lib/identity-secrets/database.json
       IDENTITY_DB_HOST: postgres
       IDENTITY_DB_PORT: 5432
       IDENTITY_SCHEMA: identity
@@ -137,16 +143,45 @@ services:
       IDENTITY_OIDC_AUDIENCE: identity-api
       IDENTITY_OIDC_JWKS_URL: http://keycloak:8080/realms/platform-local/protocol/openid-connect/certs
       IDENTITY_CORS_ORIGINS: ${IDENTITY_CORS_ORIGINS:-[]}
+      TENANT_CONTEXT_SIGNING_SECRET: ${TENANT_CONTEXT_SIGNING_SECRET:?Run scripts/bootstrap_identity.py first}
+      PROVISIONED_SECRETS_DIR: /var/lib/platform-secrets
     ports:
       - "127.0.0.1:8030:8030"
     volumes:
-      - identity_secrets:/var/lib/identity-secrets:ro
+      - provisioned_secrets:/var/lib/platform-secrets:ro
+    group_add:
+      - "${PROVISIONED_SECRETS_READER_GID:?Configure PROVISIONED_SECRETS_READER_GID in .env}"
     depends_on:
       postgres:
         condition: service_healthy
       keycloak:
         condition: service_started
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  identity-config-sync:
+    profiles: ["identity-access"]
+    build:
+      context: ../../backend/services/identity-access
+    command: ["python", "-m", "identity_access.infrastructure.keycloak_sync"]
+    environment:
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
+      KEYCLOAK_REALM: platform-local
+      KEYCLOAK_TENANT_ADMIN_CLIENT_ID: tenant-admin
+      KEYCLOAK_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?Run scripts/bootstrap_identity.py first}
+      KEYCLOAK_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?Run scripts/bootstrap_identity.py first}
+      CONTROL_PLANE_INTERNAL_URL: http://platform-control:8000
+      TENANT_CONTEXT_BROKER_TOKEN: ${TENANT_CONTEXT_BROKER_TOKEN:?Run scripts/bootstrap_identity.py first}
+      TENANT_ADMIN_ORIGIN_TEMPLATE: ${TENANT_ADMIN_ORIGIN_TEMPLATE:?Run scripts/bootstrap_identity.py first}
+      TENANT_ADMIN_BOOTSTRAP_ORIGINS: ${TENANT_ADMIN_BOOTSTRAP_ORIGINS:-http://localhost:3001}
+      KEYCLOAK_SYNC_INTERVAL_SECONDS: ${KEYCLOAK_SYNC_INTERVAL_SECONDS:-15}
+    depends_on:
+      - keycloak
+      - platform-control
+    restart: unless-stopped
+    healthcheck:
+      disable: true
     security_opt:
       - no-new-privileges:true
 
@@ -183,17 +218,14 @@ services:
       context: ../../backend/services/catalogue
       dockerfile: Dockerfile
     environment:
-      CATALOGUE_DATABASE_URL: ${CATALOGUE_DATABASE_URL:-}
-      CATALOGUE_SECRET_FILE: /var/lib/platform-secrets/22550cbd-5e10-4678-9b0c-49fd372468fb.json
-      CATALOGUE_DATABASE_NAME: t_49e84243f9e44981b3a538f943cc79ba
-      CATALOGUE_RUNTIME_ROLE: t_49e84243f9e44981b3a538f943cc79ba_catfx_rt
       CATALOGUE_DB_HOST: postgres
       CATALOGUE_DB_PORT: 5432
       CATALOGUE_OIDC_ISSUER: http://localhost:8080/realms/platform-local
       CATALOGUE_OIDC_AUDIENCE: catalogue-api
       CATALOGUE_OIDC_JWKS_URL: http://keycloak:8080/realms/platform-local/protocol/openid-connect/certs
       CATALOGUE_SCHEMA: ${CATALOGUE_SCHEMA:-catfx}
-      TENANT_HOSTS: ${TENANT_HOSTS:-{}}
+      TENANT_CONTEXT_SIGNING_SECRET: ${TENANT_CONTEXT_SIGNING_SECRET:?Run scripts/bootstrap_identity.py first}
+      PROVISIONED_SECRETS_DIR: /var/lib/platform-secrets
     ports:
       - "127.0.0.1:8010:8010"
     depends_on:
@@ -201,6 +233,8 @@ services:
         condition: service_healthy
     volumes:
       - provisioned_secrets:/var/lib/platform-secrets:ro
+    group_add:
+      - "${PROVISIONED_SECRETS_READER_GID:?Configure PROVISIONED_SECRETS_READER_GID in .env}"
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -214,27 +248,23 @@ services:
         NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8080
         NEXT_PUBLIC_KEYCLOAK_REALM: platform-local
         NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: tenant-admin
-        NEXT_PUBLIC_CATALOGUE_API_URL: http://localhost:8010
-        NEXT_PUBLIC_MEDIA_API_URL: http://localhost:8020
-        NEXT_PUBLIC_TENANT_ADMIN_NAME: Lifemac Pharma
-        NEXT_PUBLIC_TENANT_ADMIN_PRIMARY: "#0969b8"
-        NEXT_PUBLIC_TENANT_ADMIN_PRIMARY_DARK: "#064a87"
-        NEXT_PUBLIC_TENANT_ADMIN_ACCENT: "#12b889"
     environment:
+      CONTROL_PLANE_INTERNAL_URL: http://platform-control:8000
+      IDENTITY_API_INTERNAL_URL: http://identity-access:8030
+      CATALOGUE_API_INTERNAL_URL: http://catalogue:8010
+      MEDIA_API_INTERNAL_URL: http://media:8020
+      TENANT_CONTEXT_BROKER_TOKEN: ${TENANT_CONTEXT_BROKER_TOKEN:?Run scripts/bootstrap_identity.py first}
       NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8080
       NEXT_PUBLIC_KEYCLOAK_REALM: platform-local
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID: tenant-admin
-      NEXT_PUBLIC_CATALOGUE_API_URL: http://localhost:8010
-      NEXT_PUBLIC_MEDIA_API_URL: http://localhost:8020
-      NEXT_PUBLIC_TENANT_ADMIN_NAME: Lifemac Pharma
-      NEXT_PUBLIC_TENANT_ADMIN_PRIMARY: "#0969b8"
-      NEXT_PUBLIC_TENANT_ADMIN_PRIMARY_DARK: "#064a87"
-      NEXT_PUBLIC_TENANT_ADMIN_ACCENT: "#12b889"
     ports:
       - "127.0.0.1:3001:3001"
     depends_on:
       - keycloak
+      - identity-access
       - catalogue
+      - media
+      - platform-control
     security_opt:
       - no-new-privileges:true
 
@@ -243,9 +273,6 @@ services:
     build:
       context: ../../backend/services/media
     environment:
-      MEDIA_SECRET_FILE: ${MEDIA_SECRET_FILE:-}
-      MEDIA_DATABASE_NAME: t_49e84243f9e44981b3a538f943cc79ba
-      MEDIA_RUNTIME_ROLE: t_49e84243f9e44981b3a538f943cc79ba_medfx_rt
       MEDIA_DB_HOST: postgres
       MEDIA_DB_PORT: 5432
       MEDIA_SCHEMA: medfx
@@ -253,11 +280,15 @@ services:
       MEDIA_OIDC_ISSUER: http://localhost:8080/realms/platform-local
       MEDIA_OIDC_AUDIENCE: media-api
       MEDIA_OIDC_JWKS_URL: http://keycloak:8080/realms/platform-local/protocol/openid-connect/certs
+      TENANT_CONTEXT_SIGNING_SECRET: ${TENANT_CONTEXT_SIGNING_SECRET:?Run scripts/bootstrap_identity.py first}
+      PROVISIONED_SECRETS_DIR: /var/lib/platform-secrets
     ports:
       - "127.0.0.1:8020:8020"
     volumes:
       - provisioned_secrets:/var/lib/platform-secrets:ro
       - tenant_media:/var/lib/commerce-media
+    group_add:
+      - "${PROVISIONED_SECRETS_READER_GID:?Configure PROVISIONED_SECRETS_READER_GID in .env}"
     depends_on:
       postgres:
         condition: service_healthy

@@ -34,6 +34,8 @@ class RuntimeSettings(DatabaseSettings):
     cors_allowed_origins: str = ""
     app_environment: Literal["local", "production"] = "production"
     local_tenant_labels: str = ""
+    tenant_context_broker_token: SecretStr | None = None
+    tenant_context_signing_secret: SecretStr | None = None
     db_pool_size: int = Field(default=5, ge=1, le=10)
     db_max_overflow: int = Field(default=0, ge=0, le=5)
     db_pool_timeout: int = Field(default=5, ge=1, le=30)

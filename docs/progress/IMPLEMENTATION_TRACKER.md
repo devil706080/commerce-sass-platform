@@ -1,5 +1,21 @@
 # Implementation tracker
 
+## Dynamic Tenant Admin isolation (2026-11-23)
+
+- Tenant Admin now acts as a server-side gateway. It resolves the browser hostname through the
+  Control Plane and sends short-lived, audience-scoped signed context to Identity, Catalogue and
+  Media; the browser never chooses a tenant database or receives database credentials.
+- Identity resolves the tenant database dynamically and authorizes `(issuer, subject)` against
+  that tenant's membership. The exact verified initial-owner email can claim the first owner
+  membership once; a Keycloak realm role alone does not grant tenant data access.
+- Catalogue and Media no longer contain Lifemac database names, role names, secret filenames or
+  tenant-host maps. Their repositories are constructed from request-scoped signed context. Media
+  files are also stored below the opaque tenant ID.
+- The hardcoded Keycloak `tenant_id` mapper was removed. A separate local synchronizer registers
+  exact redirect origins from active verified Tenant Admin domains using an environment-defined
+  origin template.
+- Runtime verification remains pending because Docker CLI is unavailable to this Codex process.
+
 Platform Control Plane, Phase 1B: **implemented and locally verified**. The Lifemac tenant has passed Catalogue and Inventory migration/smoke readiness and was activated through the authenticated console flow. The local control-plane exit gate is complete; production hardening and additional tenants remain outside this phase.
 
 ## Initial tenant-owner contact (2026-11-19)

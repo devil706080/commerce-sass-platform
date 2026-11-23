@@ -20,6 +20,9 @@ def main() -> int:
         "KC_BOOTSTRAP_ADMIN_PASSWORD": secrets.token_urlsafe(32),
         "LOCAL_OPERATOR_EMAIL": "operator@local.test",
         "LOCAL_OPERATOR_PASSWORD": secrets.token_urlsafe(24),
+        "TENANT_CONTEXT_BROKER_TOKEN": secrets.token_urlsafe(48),
+        "TENANT_CONTEXT_SIGNING_SECRET": secrets.token_urlsafe(64),
+        "TENANT_ADMIN_ORIGIN_TEMPLATE": "http://{hostname}:3001",
     }
     missing = [(key, value) for key, value in values.items() if key not in keys]
     if not missing:
