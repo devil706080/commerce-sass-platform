@@ -9,7 +9,10 @@ from pydantic import SecretStr, ValidationError
 from platform_control_plane.core.config import RuntimeSettings, WorkerSettings
 from platform_control_plane.schemas.provisioning import ProvisioningRequest
 from platform_control_plane.worker.provisioner import database_identity, load_or_create_secrets
-from platform_control_plane.worker.service_migrations import OWNED_SERVICE_KEYS
+from platform_control_plane.worker.service_migrations import (
+    CATALOGUE_PRODUCT_RUNTIME_PRIVILEGES,
+    OWNED_SERVICE_KEYS,
+)
 
 
 def test_database_identity_is_opaque_stable_and_service_scoped() -> None:
@@ -48,6 +51,10 @@ def test_tenant_service_migration_runner_covers_every_provisioned_schema() -> No
         "inventory_fixture",
         "media_fixture",
     }
+
+
+def test_catalogue_runtime_can_complete_product_crud() -> None:
+    assert CATALOGUE_PRODUCT_RUNTIME_PRIVILEGES == "SELECT, INSERT, UPDATE, DELETE"
 
 
 def test_local_secret_is_idempotent_and_file_is_not_world_readable(tmp_path: Path) -> None:

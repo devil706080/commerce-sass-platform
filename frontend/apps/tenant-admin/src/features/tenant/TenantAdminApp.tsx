@@ -11,6 +11,7 @@ export function TenantAdminApp({ brand }: { brand: TenantBrand }) {
     "--brand": brand.palette.primary,
     "--brand-dark": brand.palette.primary_dark,
     "--mint": brand.palette.accent,
+    "--brand-surface": brand.palette.surface,
   } as React.CSSProperties;
   return <TenantBrandProvider brand={brand}><div style={theme}>{state === "authorized" ? <CatalogueWorkspace /> : <AdminLogin onState={setState} />}</div></TenantBrandProvider>;
 }

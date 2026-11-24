@@ -18,6 +18,7 @@ SERVICE_CODES = {
     "identity_access": "identity",
     "media_fixture": "medfx",
 }
+CATALOGUE_PRODUCT_RUNTIME_PRIVILEGES = "SELECT, INSERT, UPDATE, DELETE"
 
 
 def run_service_migrations(settings: WorkerSettings) -> None:
@@ -117,8 +118,10 @@ def run_service_migrations(settings: WorkerSettings) -> None:
                             )
                         )
                         service.execute(
-                            sql.SQL("GRANT SELECT, INSERT, UPDATE ON {}.products TO {}").format(
-                                sql.Identifier(schema_name), sql.Identifier(runtime_role)
+                            sql.SQL("GRANT {} ON {}.products TO {}").format(
+                                sql.SQL(CATALOGUE_PRODUCT_RUNTIME_PRIVILEGES),
+                                sql.Identifier(schema_name),
+                                sql.Identifier(runtime_role),
                             )
                         )
                     elif service_key == "inventory_fixture":

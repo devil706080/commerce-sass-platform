@@ -1,7 +1,12 @@
+import re
 from uuid import UUID
 from pydantic import BaseModel, Field
 from pydantic import field_validator
 from urllib.parse import urlsplit
+
+MEDIA_CONTENT_PATH = re.compile(
+    r"/api/v1/media/([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12})/content"
+)
 
 class ImageCreate(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
@@ -11,9 +16,15 @@ class ImageCreate(BaseModel):
     @field_validator("url")
     @classmethod
     def validate_url(cls, value: str) -> str:
+        media_path = MEDIA_CONTENT_PATH.fullmatch(value)
+        if media_path:
+            UUID(media_path.group(1))
+            return value
         parsed = urlsplit(value)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.username or parsed.password:
-            raise ValueError("Image URL must be an absolute http or https URL")
+            raise ValueError(
+                "Image URL must be an absolute http/https URL or a Media service content path"
+            )
         return value
 
     @field_validator("alt_text")
