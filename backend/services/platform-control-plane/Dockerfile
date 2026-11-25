@@ -4,9 +4,10 @@ COPY --from=ghcr.io/astral-sh/uv:0.13.8 /uv /usr/local/bin/uv
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 COPY pyproject.toml uv.lock README.md ./
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-dev --no-install-project
 COPY src ./src
-RUN test -n "$PROVISIONED_SECRETS_READER_GID" \
-    && uv sync --locked --no-dev --no-cache \
+RUN --mount=type=cache,target=/root/.cache/uv test -n "$PROVISIONED_SECRETS_READER_GID" \
+    && uv sync --locked --no-dev \
     && groupadd --gid "$PROVISIONED_SECRETS_READER_GID" platform-secrets \
     && useradd --system --uid 10001 --groups platform-secrets appuser \
     && install -d -o appuser -g platform-secrets -m 2750 /var/lib/platform-secrets

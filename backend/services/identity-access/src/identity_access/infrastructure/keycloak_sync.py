@@ -101,6 +101,30 @@ def synchronize() -> int:
         f"{keycloak_url}/admin/realms/{realm}/clients/{client_uuid}/protocol-mappers/models",
         headers=headers,
     )
+    mapper_names = {mapper.get("name") for mapper in mappers}
+    audiences = {
+        audience.strip()
+        for audience in os.getenv("KEYCLOAK_TENANT_ADMIN_AUDIENCES", "").split(",")
+        if audience.strip()
+    }
+    for audience in sorted(audiences):
+        mapper_name = f"{audience}-audience"
+        if mapper_name not in mapper_names:
+            _json_request(
+                f"{keycloak_url}/admin/realms/{realm}/clients/{client_uuid}/protocol-mappers/models",
+                method="POST",
+                headers=headers,
+                body={
+                    "name": mapper_name,
+                    "protocol": "openid-connect",
+                    "protocolMapper": "oidc-audience-mapper",
+                    "config": {
+                        "included.custom.audience": audience,
+                        "access.token.claim": "true",
+                        "id.token.claim": "false",
+                    },
+                },
+            )
     for mapper in mappers:
         if mapper.get("name") == "tenant-id":
             _json_request(

@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 const services = {
   identity: { key: "identity_access", url: process.env.IDENTITY_API_INTERNAL_URL },
   catalogue: { key: "catalogue_fixture", url: process.env.CATALOGUE_API_INTERNAL_URL },
+  inventory: { key: "inventory_fixture", url: process.env.INVENTORY_API_INTERNAL_URL },
   media: { key: "media_fixture", url: process.env.MEDIA_API_INTERNAL_URL },
 } as const;
 

@@ -13,10 +13,11 @@ from platform_control_plane.dependencies.database import get_session
 router = APIRouter(prefix="/_internal", include_in_schema=False)
 SessionDep = Annotated[Session, Depends(get_session)]
 
-ServiceKey = Literal["identity_access", "catalogue_fixture", "media_fixture"]
+ServiceKey = Literal["identity_access", "catalogue_fixture", "inventory_fixture", "media_fixture"]
 AUDIENCES: dict[ServiceKey, str] = {
     "identity_access": "identity-api",
     "catalogue_fixture": "catalogue-api",
+    "inventory_fixture": "inventory-api",
     "media_fixture": "media-api",
 }
 

@@ -38,6 +38,9 @@
       "name": "catalogue-api-audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
       "config": { "included.custom.audience": "catalogue-api", "access.token.claim": "true", "id.token.claim": "false" }
     }, {
+      "name": "inventory-api-audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
+      "config": { "included.custom.audience": "inventory-api", "access.token.claim": "true", "id.token.claim": "false" }
+    }, {
       "name": "media-api-audience", "protocol": "openid-connect", "protocolMapper": "oidc-audience-mapper",
       "config": { "included.custom.audience": "media-api", "access.token.claim": "true", "id.token.claim": "false" }
     }, {

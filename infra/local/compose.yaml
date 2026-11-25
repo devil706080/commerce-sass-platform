@@ -169,6 +169,7 @@ services:
       KEYCLOAK_INTERNAL_URL: http://keycloak:8080
       KEYCLOAK_REALM: platform-local
       KEYCLOAK_TENANT_ADMIN_CLIENT_ID: tenant-admin
+      KEYCLOAK_TENANT_ADMIN_AUDIENCES: identity-api,catalogue-api,media-api,inventory-api
       KEYCLOAK_ADMIN_USERNAME: ${KC_BOOTSTRAP_ADMIN_USERNAME:?Run scripts/bootstrap_identity.py first}
       KEYCLOAK_ADMIN_PASSWORD: ${KC_BOOTSTRAP_ADMIN_PASSWORD:?Run scripts/bootstrap_identity.py first}
       CONTROL_PLANE_INTERNAL_URL: http://platform-control:8000
@@ -252,6 +253,7 @@ services:
       CONTROL_PLANE_INTERNAL_URL: http://platform-control:8000
       IDENTITY_API_INTERNAL_URL: http://identity-access:8030
       CATALOGUE_API_INTERNAL_URL: http://catalogue:8010
+      INVENTORY_API_INTERNAL_URL: http://inventory:8040
       MEDIA_API_INTERNAL_URL: http://media:8020
       TENANT_CONTEXT_BROKER_TOKEN: ${TENANT_CONTEXT_BROKER_TOKEN:?Run scripts/bootstrap_identity.py first}
       NEXT_PUBLIC_KEYCLOAK_URL: http://localhost:8080
@@ -263,6 +265,7 @@ services:
       - keycloak
       - identity-access
       - catalogue
+      - inventory
       - media
       - platform-control
     security_opt:
@@ -317,6 +320,32 @@ services:
       - keycloak
       - catalogue
       - platform-control
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+
+  inventory:
+    profiles: ["inventory"]
+    build:
+      context: ../../backend/services/inventory
+    environment:
+      INVENTORY_DB_HOST: postgres
+      INVENTORY_DB_PORT: 5432
+      INVENTORY_SCHEMA: invfx
+      INVENTORY_OIDC_ISSUER: http://localhost:8080/realms/platform-local
+      INVENTORY_OIDC_AUDIENCE: inventory-api
+      INVENTORY_OIDC_JWKS_URL: http://keycloak:8080/realms/platform-local/protocol/openid-connect/certs
+      TENANT_CONTEXT_SIGNING_SECRET: ${TENANT_CONTEXT_SIGNING_SECRET:?Run scripts/bootstrap_identity.py first}
+      PROVISIONED_SECRETS_DIR: /var/lib/platform-secrets
+    ports:
+      - "127.0.0.1:8040:8040"
+    volumes:
+      - provisioned_secrets:/var/lib/platform-secrets:ro
+    group_add:
+      - "${PROVISIONED_SECRETS_READER_GID:?Configure PROVISIONED_SECRETS_READER_GID in .env}"
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
