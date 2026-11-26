@@ -10,11 +10,14 @@ from inventory.schemas import (
     Batch,
     BatchCreate,
     BatchStatusUpdate,
+    InventoryAlert,
+    InventoryDashboardSummary,
     Movement,
     Reservation,
     ReservationCreate,
     StockItem,
     StockItemCreate,
+    StockReceiptCreate,
     Warehouse,
     WarehouseCreate,
 )
@@ -62,6 +65,18 @@ def adjust(stock_item_id: UUID, payload: AdjustmentCreate, identity: InventoryId
 def movements(stock_item_id: UUID, limit: int = Query(50, ge=1, le=200), inventory: InventoryService = Depends(service)): return inventory.movements(stock_item_id, limit)
 
 
+@router.post("/stock-items/{stock_item_id}/receipts", response_model=Movement, status_code=201)
+def receive_simple_stock(
+    stock_item_id: UUID,
+    payload: StockReceiptCreate,
+    identity: InventoryIdentity = Depends(inventory_context),
+    inventory: InventoryService = Depends(service),
+):
+    return translate(
+        lambda: inventory.receive_simple_stock(stock_item_id, payload, identity.subject)
+    )
+
+
 @router.get("/stock-items/{stock_item_id}/batches", response_model=list[Batch])
 def batches(stock_item_id: UUID, inventory: InventoryService = Depends(service)):
     return inventory.batches(stock_item_id)
@@ -88,6 +103,20 @@ def update_batch_status(
     return translate(
         lambda: inventory.update_batch_status(stock_item_id, batch_id, payload, identity.subject)
     )
+
+
+@router.get("/dashboard/summary", response_model=InventoryDashboardSummary)
+def dashboard_summary(inventory: InventoryService = Depends(service)):
+    return inventory.dashboard_summary()
+
+
+@router.get("/alerts", response_model=list[InventoryAlert])
+def alerts(
+    type: str = Query(pattern="^(LOW_STOCK|OUT_OF_STOCK|EXPIRING)$"),
+    limit: int = Query(default=20, ge=1, le=100),
+    inventory: InventoryService = Depends(service),
+):
+    return inventory.alerts(type, limit)
 
 
 @router.post("/reservations", response_model=Reservation, status_code=201)

@@ -19,3 +19,13 @@ def test_batch_endpoints_require_authentication() -> None:
         "/api/v1/stock-items/00000000-0000-0000-0000-000000000001/batches"
     )
     assert response.status_code in {401, 403}
+
+
+def test_dashboard_summary_requires_authentication() -> None:
+    response = TestClient(app).get("/api/v1/dashboard/summary")
+    assert response.status_code in {401, 403}
+
+
+def test_inventory_alerts_require_authentication() -> None:
+    response = TestClient(app).get("/api/v1/alerts?type=LOW_STOCK")
+    assert response.status_code in {401, 403}

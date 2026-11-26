@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from inventory.schemas import AdjustmentCreate, BatchCreate, ReservationCreate
+from inventory.schemas import AdjustmentCreate, BatchCreate, ReservationCreate, StockReceiptCreate
 
 
 def test_reservation_rejects_duplicate_skus() -> None:
@@ -40,3 +40,8 @@ def test_batch_rejects_expiry_before_manufacture() -> None:
             expires_on=date(2027, 1, 1),
             idempotency_key="receipt-0001",
         )
+
+
+def test_simple_stock_receipt_requires_positive_quantity() -> None:
+    with pytest.raises(ValidationError):
+        StockReceiptCreate(quantity=0, idempotency_key="receipt-0001")

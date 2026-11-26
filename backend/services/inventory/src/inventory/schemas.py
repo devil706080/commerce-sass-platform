@@ -21,6 +21,7 @@ class StockItemCreate(BaseModel):
     sku: str = Field(min_length=1, max_length=100)
     warehouse_id: UUID
     low_stock_threshold: int = Field(default=5, ge=0)
+    tracking_mode: Literal["SIMPLE", "BATCH_EXPIRY"] = "SIMPLE"
 
 
 class StockItem(BaseModel):
@@ -34,6 +35,7 @@ class StockItem(BaseModel):
     damaged: int
     available: int
     low_stock_threshold: int
+    tracking_mode: Literal["SIMPLE", "BATCH_EXPIRY"]
     version: int
     updated_at: datetime
 
@@ -51,6 +53,12 @@ class AdjustmentCreate(BaseModel):
         if value == 0:
             raise ValueError("Quantity adjustment cannot be zero")
         return value
+
+
+class StockReceiptCreate(BaseModel):
+    quantity: int = Field(gt=0, le=10_000_000)
+    source_reference: str | None = Field(default=None, max_length=160)
+    idempotency_key: str = Field(min_length=8, max_length=160)
 
 
 class Movement(BaseModel):
@@ -140,3 +148,25 @@ class Reservation(BaseModel):
     expires_at: datetime
     lines: list[ReservationLine]
     allocations: list[ReservationAllocation] = Field(default_factory=list)
+
+
+class InventoryDashboardSummary(BaseModel):
+    tracked_products: int
+    available_units: int
+    reserved_units: int
+    damaged_units: int
+    low_stock_products: int
+    out_of_stock_products: int
+    expiring_within_60_days: int
+    blocked_batches: int
+
+
+class InventoryAlert(BaseModel):
+    type: Literal["LOW_STOCK", "OUT_OF_STOCK", "EXPIRING"]
+    stock_item_id: UUID
+    sku: str
+    available: int
+    low_stock_threshold: int | None = None
+    batch_id: UUID | None = None
+    lot_number: str | None = None
+    expires_on: date | None = None

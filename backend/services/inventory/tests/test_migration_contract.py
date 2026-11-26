@@ -15,3 +15,11 @@ def test_batch_migration_supports_fefo_allocations_and_audit() -> None:
     assert "inventory_batches_fefo_idx" in sql
     assert "batch_events" in sql
     assert "receipt_idempotency_key" in sql
+
+
+def test_simple_inventory_migration_adds_tracking_and_default_location() -> None:
+    sql = (Path(__file__).parents[1] / "migrations" / "003_simple_inventory.sql").read_text()
+    assert "tracking_mode" in sql
+    assert "'SIMPLE', 'BATCH_EXPIRY'" in sql
+    assert "VALUES ('MAIN', 'Main Location', true)" in sql
+    assert "ON CONFLICT (code) DO NOTHING" in sql

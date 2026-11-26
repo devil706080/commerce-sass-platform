@@ -11,6 +11,7 @@ from inventory.schemas import (
     BatchCreate,
     BatchStatusUpdate,
     ReservationCreate,
+    StockReceiptCreate,
     StockItemCreate,
     WarehouseCreate,
 )
@@ -41,7 +42,7 @@ class InventoryRepository:
                 f"GREATEST(0,s.on_hand-s.reserved-s.damaged-COALESCE((SELECT sum(b.on_hand-b.reserved) "
                 f"FROM {self.schema}.batches b WHERE b.stock_item_id=s.id AND "
                 "(b.status<>'AVAILABLE' OR (b.expires_on IS NOT NULL AND b.expires_on<current_date))),0)) "
-                "AS available,s.low_stock_threshold,s.version,s.updated_at "
+                "AS available,s.low_stock_threshold,s.tracking_mode,s.version,s.updated_at "
                 f"FROM {self.schema}.stock_items s{where} ORDER BY s.sku",
                 params,
                 row_factory=dict_row,
@@ -50,7 +51,7 @@ class InventoryRepository:
     def create_stock_item(self, payload: StockItemCreate):
         with connect(self.settings) as db:
             try:
-                row = db.execute(f"INSERT INTO {self.schema}.stock_items(product_id,variant_id,sku,warehouse_id,low_stock_threshold) VALUES (%s,%s,%s,%s,%s) RETURNING id,product_id,variant_id,sku,warehouse_id,on_hand,reserved,damaged,(on_hand-reserved-damaged) AS available,low_stock_threshold,version,updated_at", (payload.product_id, payload.variant_id, payload.sku, payload.warehouse_id, payload.low_stock_threshold), row_factory=dict_row).fetchone()
+                row = db.execute(f"INSERT INTO {self.schema}.stock_items(product_id,variant_id,sku,warehouse_id,low_stock_threshold,tracking_mode) VALUES (%s,%s,%s,%s,%s,%s) RETURNING id,product_id,variant_id,sku,warehouse_id,on_hand,reserved,damaged,(on_hand-reserved-damaged) AS available,low_stock_threshold,tracking_mode,version,updated_at", (payload.product_id, payload.variant_id, payload.sku, payload.warehouse_id, payload.low_stock_threshold, payload.tracking_mode), row_factory=dict_row).fetchone()
                 db.commit(); return row
             except Exception as exc:
                 db.rollback(); raise InventoryConflict("SKU already exists or warehouse is invalid") from exc
@@ -68,6 +69,46 @@ class InventoryRepository:
             db.execute(f"UPDATE {self.schema}.stock_items SET on_hand=%s,damaged=%s,version=version+1,updated_at=now() WHERE id=%s", (on_hand, damaged, stock_item_id))
             row = db.execute(f"INSERT INTO {self.schema}.stock_movements(stock_item_id,movement_type,quantity_delta,reason,source_reference,actor_subject,idempotency_key) VALUES (%s,'ADJUSTMENT',%s,%s,%s,%s,%s) RETURNING id,stock_item_id,movement_type,quantity_delta,reason,source_reference,actor_subject,created_at", (stock_item_id, payload.quantity_delta, payload.reason, payload.source_reference, actor, payload.idempotency_key), row_factory=dict_row).fetchone()
             db.commit(); return row
+
+    def receive_simple_stock(self, stock_item_id: UUID, payload: StockReceiptCreate, actor: str):
+        with connect(self.settings) as db:
+            existing = db.execute(
+                f"SELECT id,stock_item_id,movement_type,quantity_delta,reason,source_reference,actor_subject,created_at "
+                f"FROM {self.schema}.stock_movements WHERE idempotency_key=%s",
+                (payload.idempotency_key,),
+                row_factory=dict_row,
+            ).fetchone()
+            if existing:
+                return existing
+            item = db.execute(
+                f"SELECT tracking_mode FROM {self.schema}.stock_items WHERE id=%s FOR UPDATE",
+                (stock_item_id,),
+            ).fetchone()
+            if not item:
+                raise InventoryNotFound("Stock item not found")
+            if item[0] != "SIMPLE":
+                raise InventoryConflict("Batch-tracked stock must be received with a lot number")
+            db.execute(
+                f"UPDATE {self.schema}.stock_items SET on_hand=on_hand+%s,version=version+1,"
+                "updated_at=now() WHERE id=%s",
+                (payload.quantity, stock_item_id),
+            )
+            row = db.execute(
+                f"INSERT INTO {self.schema}.stock_movements"
+                "(stock_item_id,movement_type,quantity_delta,reason,source_reference,actor_subject,idempotency_key) "
+                "VALUES (%s,'STOCK_RECEIPT',%s,'Stock received',%s,%s,%s) "
+                "RETURNING id,stock_item_id,movement_type,quantity_delta,reason,source_reference,actor_subject,created_at",
+                (
+                    stock_item_id,
+                    payload.quantity,
+                    payload.source_reference,
+                    actor,
+                    payload.idempotency_key,
+                ),
+                row_factory=dict_row,
+            ).fetchone()
+            db.commit()
+            return row
 
     def movements(self, stock_item_id: UUID, limit: int):
         with connect(self.settings) as db:
@@ -94,11 +135,13 @@ class InventoryRepository:
                 db.commit()
                 return self._get_batch(existing[0])
             item = db.execute(
-                f"SELECT id FROM {self.schema}.stock_items WHERE id=%s FOR UPDATE",
+                f"SELECT id,tracking_mode FROM {self.schema}.stock_items WHERE id=%s FOR UPDATE",
                 (stock_item_id,),
             ).fetchone()
             if not item:
                 raise InventoryNotFound("Stock item not found")
+            if item[1] != "BATCH_EXPIRY":
+                raise InventoryConflict("This product uses simple stock tracking")
             try:
                 batch_id = db.execute(
                     f"INSERT INTO {self.schema}.batches"
@@ -190,6 +233,51 @@ class InventoryRepository:
             )
             db.commit()
             return self._get_batch(batch_id)
+
+    def dashboard_summary(self):
+        with connect(self.settings) as db:
+            return db.execute(
+                f"SELECT count(*)::int AS tracked_products,"
+                f"COALESCE(sum(GREATEST(0,s.on_hand-s.reserved-s.damaged-COALESCE((SELECT sum(b.on_hand-b.reserved) FROM {self.schema}.batches b WHERE b.stock_item_id=s.id AND (b.status<>'AVAILABLE' OR (b.expires_on IS NOT NULL AND b.expires_on<current_date))),0))),0)::int AS available_units,"
+                "COALESCE(sum(s.reserved),0)::int AS reserved_units,"
+                "COALESCE(sum(s.damaged),0)::int AS damaged_units,"
+                f"count(*) FILTER (WHERE GREATEST(0,s.on_hand-s.reserved-s.damaged-COALESCE((SELECT sum(b.on_hand-b.reserved) FROM {self.schema}.batches b WHERE b.stock_item_id=s.id AND (b.status<>'AVAILABLE' OR (b.expires_on IS NOT NULL AND b.expires_on<current_date))),0))<=s.low_stock_threshold)::int AS low_stock_products,"
+                f"count(*) FILTER (WHERE GREATEST(0,s.on_hand-s.reserved-s.damaged-COALESCE((SELECT sum(b.on_hand-b.reserved) FROM {self.schema}.batches b WHERE b.stock_item_id=s.id AND (b.status<>'AVAILABLE' OR (b.expires_on IS NOT NULL AND b.expires_on<current_date))),0))=0)::int AS out_of_stock_products,"
+                f"(SELECT count(*)::int FROM {self.schema}.batches b WHERE b.on_hand>b.reserved AND b.expires_on BETWEEN current_date AND current_date+60) AS expiring_within_60_days,"
+                f"(SELECT count(*)::int FROM {self.schema}.batches b WHERE b.on_hand>b.reserved AND b.status IN ('HOLD','RECALLED')) AS blocked_batches "
+                f"FROM {self.schema}.stock_items s WHERE s.product_id IS NOT NULL AND s.warehouse_id IS NOT NULL",
+                row_factory=dict_row,
+            ).fetchone()
+
+    def alerts(self, alert_type: str, limit: int):
+        with connect(self.settings) as db:
+            if alert_type == "EXPIRING":
+                return db.execute(
+                    f"SELECT 'EXPIRING' AS type,s.id AS stock_item_id,s.sku,"
+                    "(b.on_hand-b.reserved)::int AS available,NULL::int AS low_stock_threshold,"
+                    "b.id AS batch_id,b.lot_number,b.expires_on "
+                    f"FROM {self.schema}.batches b JOIN {self.schema}.stock_items s ON s.id=b.stock_item_id "
+                    "WHERE b.on_hand>b.reserved AND b.expires_on BETWEEN current_date AND current_date+60 "
+                    "ORDER BY b.expires_on,b.id LIMIT %s",
+                    (limit,),
+                    row_factory=dict_row,
+                ).fetchall()
+            available = (
+                f"GREATEST(0,s.on_hand-s.reserved-s.damaged-COALESCE((SELECT sum(b.on_hand-b.reserved) "
+                f"FROM {self.schema}.batches b WHERE b.stock_item_id=s.id AND "
+                "(b.status<>'AVAILABLE' OR (b.expires_on IS NOT NULL AND b.expires_on<current_date))),0))"
+            )
+            comparison = "=0" if alert_type == "OUT_OF_STOCK" else "<=s.low_stock_threshold"
+            return db.execute(
+                f"SELECT %s AS type,s.id AS stock_item_id,s.sku,"
+                f"{available}::int AS available,"
+                "s.low_stock_threshold,NULL::uuid AS batch_id,NULL::varchar AS lot_number,NULL::date AS expires_on "
+                f"FROM {self.schema}.stock_items s WHERE s.product_id IS NOT NULL "
+                f"AND {available}{comparison} "
+                "ORDER BY available,s.sku LIMIT %s",
+                (alert_type, limit),
+                row_factory=dict_row,
+            ).fetchall()
 
     def _expire(self, db) -> None:
         allocations = db.execute(

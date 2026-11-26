@@ -10,7 +10,13 @@ import pytest
 from inventory.config import Settings
 from inventory.errors import InventoryConflict
 from inventory.repository import InventoryRepository
-from inventory.schemas import BatchCreate, ReservationCreate, StockItemCreate, WarehouseCreate
+from inventory.schemas import (
+    BatchCreate,
+    ReservationCreate,
+    StockItemCreate,
+    StockReceiptCreate,
+    WarehouseCreate,
+)
 
 
 pytestmark = pytest.mark.integration
@@ -82,14 +88,20 @@ def repository():
                 )
 
 
-def _stock(context: InventoryTestContext, sku: str):
+def _stock(
+    context: InventoryTestContext, sku: str, tracking_mode: str = "BATCH_EXPIRY"
+):
     warehouse = context.repository.create_warehouse(
         WarehouseCreate(code=f"W-{uuid4().hex[:8].upper()}", name="Integration warehouse")
     )
     context.warehouse_ids.append(warehouse["id"])
     item = context.repository.create_stock_item(
         StockItemCreate(
-            product_id=uuid4(), sku=sku, warehouse_id=warehouse["id"], low_stock_threshold=1
+            product_id=uuid4(),
+            sku=sku,
+            warehouse_id=warehouse["id"],
+            low_stock_threshold=1,
+            tracking_mode=tracking_mode,
         )
     )
     context.stock_item_ids.append(item["id"])
@@ -182,3 +194,21 @@ def test_cross_tenant_database_access_is_denied(environment_name: str) -> None:
         pytest.skip("Cross-tenant Inventory database credentials are not configured")
     with pytest.raises(psycopg.OperationalError):
         psycopg.connect(database_url, connect_timeout=3)
+
+
+def test_default_location_and_simple_receipt_are_idempotent(
+    repository: InventoryTestContext,
+) -> None:
+    assert any(warehouse["code"] == "MAIN" for warehouse in repository.repository.list_warehouses())
+    item = _stock(repository, f"SIMPLE-{uuid4().hex[:8]}", tracking_mode="SIMPLE")
+    key = f"receipt-{uuid4()}"
+    payload = StockReceiptCreate(quantity=4, source_reference="TEST-GRN", idempotency_key=key)
+    first = repository.repository.receive_simple_stock(item["id"], payload, "integration-test")
+    second = repository.repository.receive_simple_stock(item["id"], payload, "integration-test")
+    assert first["id"] == second["id"]
+    current = repository.repository.list_stock(item["sku"])[0]
+    assert current["available"] == 4
+    assert current["tracking_mode"] == "SIMPLE"
+    summary = repository.repository.dashboard_summary()
+    assert summary["tracked_products"] >= 1
+    assert summary["available_units"] >= 4

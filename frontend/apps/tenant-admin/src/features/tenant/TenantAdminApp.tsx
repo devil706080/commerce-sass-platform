@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { AdminLogin, AuthState } from "@/features/auth/AdminLogin";
-import { CatalogueWorkspace } from "@/features/catalogue/CatalogueWorkspace";
+import { OperationsWorkspace } from "@/features/operations/OperationsWorkspace";
 import { TenantBrand, TenantBrandProvider } from "@/features/tenant/TenantBrandProvider";
 
 export function TenantAdminApp({ brand }: { brand: TenantBrand }) {
@@ -13,5 +13,5 @@ export function TenantAdminApp({ brand }: { brand: TenantBrand }) {
     "--mint": brand.palette.accent,
     "--brand-surface": brand.palette.surface,
   } as React.CSSProperties;
-  return <TenantBrandProvider brand={brand}><div style={theme}>{state === "authorized" ? <CatalogueWorkspace /> : <AdminLogin onState={setState} />}</div></TenantBrandProvider>;
+  return <TenantBrandProvider brand={brand}><div style={theme}>{state === "authorized" ? <OperationsWorkspace /> : <AdminLogin onState={setState} />}</div></TenantBrandProvider>;
 }

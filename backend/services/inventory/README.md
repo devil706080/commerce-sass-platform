@@ -18,7 +18,10 @@ Stock availability, reservation/commit/release, batch and expiry operations.
 - `GET/POST /api/v1/warehouses`
 - `GET/POST /api/v1/stock-items`
 - `GET /api/v1/availability/{sku}`
+- `GET /api/v1/dashboard/summary`
+- `GET /api/v1/alerts?type=LOW_STOCK|OUT_OF_STOCK|EXPIRING`
 - `POST /api/v1/stock-items/{id}/adjustments`
+- `POST /api/v1/stock-items/{id}/receipts`
 - `GET /api/v1/stock-items/{id}/movements`
 - `GET/POST /api/v1/stock-items/{id}/batches`
 - `PATCH /api/v1/stock-items/{id}/batches/{batch_id}/status`
@@ -32,6 +35,10 @@ by earliest expiry first (FEFO), can span multiple batches, and release/commit/e
 both aggregate and batch counters. Held, recalled and expired batches are excluded from new
 reservations. Checkout service-to-service authorization and real concurrent-database stress
 coverage remain required before production checkout integration.
+
+Every migrated tenant receives one idempotently seeded `MAIN / Main Location` warehouse.
+Stock items declare either `SIMPLE` or `BATCH_EXPIRY` tracking. Multi-location operations
+are intentionally deferred; the current product workflow targets the default location.
 
 ## Required independent structure when this service is approved
 

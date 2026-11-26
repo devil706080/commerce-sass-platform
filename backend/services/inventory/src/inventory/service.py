@@ -6,6 +6,7 @@ from inventory.schemas import (
     BatchCreate,
     BatchStatusUpdate,
     ReservationCreate,
+    StockReceiptCreate,
     StockItemCreate,
     WarehouseCreate,
 )
@@ -21,9 +22,12 @@ class InventoryService:
     def create_stock_item(self, payload: StockItemCreate): return self.repository.create_stock_item(payload)
     def adjust(self, stock_item_id: UUID, payload: AdjustmentCreate, actor: str): return self.repository.adjust(stock_item_id, payload, actor)
     def movements(self, stock_item_id: UUID, limit: int): return self.repository.movements(stock_item_id, limit)
+    def receive_simple_stock(self, stock_item_id: UUID, payload: StockReceiptCreate, actor: str): return self.repository.receive_simple_stock(stock_item_id, payload, actor)
     def batches(self, stock_item_id: UUID): return self.repository.list_batches(stock_item_id)
     def create_batch(self, stock_item_id: UUID, payload: BatchCreate, actor: str): return self.repository.create_batch(stock_item_id, payload, actor)
     def update_batch_status(self, stock_item_id: UUID, batch_id: UUID, payload: BatchStatusUpdate, actor: str): return self.repository.update_batch_status(stock_item_id, batch_id, payload, actor)
+    def dashboard_summary(self): return self.repository.dashboard_summary()
+    def alerts(self, alert_type: str, limit: int): return self.repository.alerts(alert_type, limit)
     def reserve(self, payload: ReservationCreate, actor: str): return self.repository.reserve(payload, actor)
     def get_reservation(self, reservation_id: UUID): return self.repository.get_reservation(reservation_id)
     def release(self, reservation_id: UUID, actor: str): return self.repository.transition_reservation(reservation_id, "RELEASED", actor)
